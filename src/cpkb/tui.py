@@ -1,5 +1,5 @@
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown
+from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown, Input
 from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
 
@@ -32,12 +32,16 @@ class SnippetApp(App):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh List"),
         Binding("c", "copy_snippet", "Copy Code"),
+        Binding("/", "focus_search", "Search"),
+        Binding("e", "edit_snippet", "Edit"),
+        Binding("d", "delete_snippet", "Delete"),
     ]
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
             with Vertical(id="left-pane"):
+                yield Input(placeholder="Search snippets (/)", id="search-input")
                 yield ListView(id="snippet-list")
             with Vertical(id="right-pane"):
                 yield Markdown("Select a snippet from the list to view its contents.", id="snippet-view")
@@ -48,19 +52,40 @@ class SnippetApp(App):
         self.cursor = self.conn.cursor()
         self.action_refresh()
 
-    def action_refresh(self) -> None:
+    def action_focus_search(self) -> None:
+        self.query_one("#search-input", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "search-input":
+            self.action_refresh(query=event.value)
+
+    def action_refresh(self, query: str = "") -> None:
         """Refresh the list of snippets."""
         list_view = self.query_one("#snippet-list", ListView)
         list_view.clear()
         
-        self.cursor.execute("SELECT id, title FROM snippets ORDER BY created_at DESC")
+        if query:
+            query_parts = query.lower().split()
+            conditions = []
+            params = []
+            for part in query_parts:
+                like_str = f"%{part}%"
+                conditions.append("(LOWER(title) LIKE ? OR LOWER(description) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(code) LIKE ?)")
+                params.extend([like_str, like_str, like_str, like_str])
+            
+            query_sql = "SELECT id, title FROM snippets WHERE " + " AND ".join(conditions) + " ORDER BY created_at DESC"
+            self.cursor.execute(query_sql, params)
+        else:
+            self.cursor.execute("SELECT id, title FROM snippets ORDER BY created_at DESC")
+            
         rows = self.cursor.fetchall()
-        
         for row in rows:
             list_view.append(ListItem(Label(f"{row[0]} - {row[1]}"), id=f"item_{row[0]}"))
             
         if rows:
             list_view.index = 0
+        else:
+            self.query_one("#snippet-view", Markdown).update("No snippets found matching your search.")
 
     def action_copy_snippet(self) -> None:
         """Copy the code of the currently selected snippet to the clipboard."""
@@ -72,6 +97,31 @@ class SnippetApp(App):
             if row:
                 self.copy_to_clipboard(row[0])
                 self.notify(f"Code for {snippet_id} copied to clipboard!", title="Copied!")
+
+    def action_edit_snippet(self) -> None:
+        list_view = self.query_one("#snippet-list", ListView)
+        if list_view.highlighted_child and list_view.highlighted_child.id:
+            snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            
+            with self.suspend():
+                from .cli import cmd_edit
+                class DummyArgs: id = snippet_id
+                cmd_edit(DummyArgs())
+                
+            self.action_refresh()
+            self.notify(f"Snippet {snippet_id} updated.")
+
+    def action_delete_snippet(self) -> None:
+        list_view = self.query_one("#snippet-list", ListView)
+        if list_view.highlighted_child and list_view.highlighted_child.id:
+            snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            
+            with self.suspend():
+                from .cli import cmd_delete
+                class DummyArgs: id = snippet_id
+                cmd_delete(DummyArgs())
+                
+            self.action_refresh()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if not event.item.id:
