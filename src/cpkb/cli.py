@@ -53,6 +53,63 @@ def backup_db(prefix: str = "manual") -> str:
     shutil.copy2(DB_PATH, backup_path)
     return str(backup_path)
 
+def cmd_backup(args: argparse.Namespace) -> None:
+    """Create a manual backup of the database."""
+    path = backup_db("manual")
+    if path:
+        print(f"Database backed up successfully to: {path}")
+    else:
+        print("No database found to backup.", file=sys.stderr)
+
+
+def cmd_encrypt_db(args: argparse.Namespace) -> None:
+    """Encrypt the SQLite database using a key from CPKB_ENCRYPT_KEY env variable.
+    The encrypted file is written with a .enc suffix.
+    """
+    key = os.getenv('CPKB_ENCRYPT_KEY')
+    if not key:
+        print('Error: CPKB_ENCRYPT_KEY not set.', file=sys.stderr)
+        return
+    if not DB_PATH.exists():
+        print('No database to encrypt.', file=sys.stderr)
+        return
+    with open(DB_PATH, 'rb') as fdb:
+        data = fdb.read()
+    from cryptography.fernet import Fernet
+    f = Fernet(key.encode())
+    encrypted = f.encrypt(data)
+    enc_path = DB_PATH.with_suffix('.enc')
+    with open(enc_path, 'wb') as fe:
+        fe.write(encrypted)
+    print(f'Encrypted database written to {enc_path}')
+
+
+def cmd_decrypt_db(args: argparse.Namespace) -> None:
+    """Decrypt the previously encrypted SQLite database using the key from CPKB_ENCRYPT_KEY.
+    Restores the original DB_PATH file.
+    """
+    key = os.getenv('CPKB_ENCRYPT_KEY')
+    if not key:
+        print('Error: CPKB_ENCRYPT_KEY not set.', file=sys.stderr)
+        return
+    enc_path = DB_PATH.with_suffix('.enc')
+    if not enc_path.exists():
+        print('No encrypted database found.', file=sys.stderr)
+        return
+    with open(enc_path, 'rb') as fe:
+        encrypted = fe.read()
+    from cryptography.fernet import Fernet
+    f = Fernet(key.encode())
+    try:
+        data = f.decrypt(encrypted)
+    except Exception as e:
+        print(f'Decryption failed: {e}', file=sys.stderr)
+        return
+    with open(DB_PATH, 'wb') as fdb:
+        fdb.write(data)
+    print(f'Decrypted database restored to {DB_PATH}')
+
+
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
@@ -546,6 +603,12 @@ def cmd_sync(args: argparse.Namespace) -> None:
     else:
         print("No database found to backup.")
 
+
+# Encryption functions moved to top level
+
+
+    # End of encryption commands
+
 def cmd_tui(args: argparse.Namespace) -> None:
     try:
         from .tui import run_tui
@@ -602,6 +665,75 @@ def cmd_copy(args: argparse.Namespace) -> None:
         except Exception as e:
             print(f"Clipboard copy failed ({e}); here is the code:\n")
             print(row[0])
+        print(row[0])
+
+
+def cmd_export(args: argparse.Namespace) -> None:
+    """Export all snippets to a markdown file."""
+    conn = init_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM snippets ORDER BY created_at')
+    rows = cursor.fetchall()
+    if not rows:
+        print('No snippets to export.')
+        return
+    export_dir = APP_DIR / 'exports'
+    export_dir.mkdir(parents=True, exist_ok=True)
+    out_path = export_dir / f'snippets_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.md'
+    with open(out_path, 'w') as f:
+        for row in rows:
+            f.write(f"## {row[1]} ({row[0]})\n")
+            f.write(f"**Description:** {row[2] or ''}\n")
+            f.write(f"**Use case:** {row[3] or ''}\n")
+            f.write(f"**Tags:** {row[4] or ''}\n")
+            f.write("\n```\n" + row[5] + "\n```\n\n")
+    print(f'Exported {len(rows)} snippets to {out_path}')
+
+def cmd_export_json(args: argparse.Namespace) -> None:
+    """Export snippets to JSON file."""
+    import json
+    conn = init_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM snippets ORDER BY created_at')
+    rows = cursor.fetchall()
+    data = [
+        {
+            "id": r[0],
+            "title": r[1],
+            "description": r[2],
+            "use_case": r[3],
+            "tags": r[4],
+            "code": r[5],
+            "created_at": r[6],
+            "updated_at": r[7],
+        } for r in rows
+    ]
+    export_dir = APP_DIR / 'exports'
+    export_dir.mkdir(parents=True, exist_ok=True)
+    out_path = export_dir / f'snippets_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json'
+    with open(out_path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f'Exported {len(data)} snippets to {out_path}')
+
+def cmd_export_html(args: argparse.Namespace) -> None:
+    """Export snippets to an HTML file."""
+    conn = init_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM snippets ORDER BY created_at')
+    rows = cursor.fetchall()
+    export_dir = APP_DIR / 'exports'
+    export_dir.mkdir(parents=True, exist_ok=True)
+    out_path = export_dir / f'snippets_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.html'
+    with open(out_path, 'w') as f:
+        f.write("<html><head><meta charset='utf-8'><title>CPKB Export</title></head><body>")
+        for row in rows:
+            f.write(f"<section><h2>{row[1]} ({row[0]})</h2>")
+            f.write(f"<p><strong>Description:</strong> {row[2] or ''}</p>")
+            f.write(f"<p><strong>Use case:</strong> {row[3] or ''}</p>")
+            f.write(f"<p><strong>Tags:</strong> {row[4] or ''}</p>")
+            f.write(f"<pre>{row[5]}</pre></section><hr/>")
+        f.write("</body></html>")
+    print(f'Exported {len(rows)} snippets to {out_path}')
 
 def cmd_revise(args: argparse.Namespace) -> None:
     conn = init_db()
@@ -681,13 +813,19 @@ def main() -> None:
     
     parser_export = subparsers.add_parser("export", help="Export all snippets to a markdown file")
     parser_export.set_defaults(func=cmd_export)
-parser_export_json = subparsers.add_parser("export-json", help="Export snippets to JSON")
-parser_export_json.set_defaults(func=cmd_export_json)
-parser_export_html = subparsers.add_parser("export-html", help="Export snippets to HTML")
-parser_export_html.set_defaults(func=cmd_export_html)
+    parser_export_json = subparsers.add_parser("export-json", help="Export snippets to JSON")
+    parser_export_json.set_defaults(func=cmd_export_json)
+    parser_export_html = subparsers.add_parser("export-html", help="Export snippets to HTML")
+    parser_export_html.set_defaults(func=cmd_export_html)
     
     parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
     parser_backup.set_defaults(func=cmd_backup)
+
+    parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database")
+    parser_encrypt.set_defaults(func=cmd_encrypt_db)
+
+    parser_decrypt = subparsers.add_parser("decrypt-db", help="Decrypt the database")
+    parser_decrypt.set_defaults(func=cmd_decrypt_db)
 
     # V2 Commands
     parser_tui = subparsers.add_parser("tui", help="Launch the Textual TUI")
