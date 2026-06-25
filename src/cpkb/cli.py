@@ -42,7 +42,7 @@ import random as rnd
 XDG_DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
 APP_DIR = XDG_DATA_HOME / "cpkb"
 DB_PATH = APP_DIR / "snippets.db"
-
+KEY_PATH = APP_DIR / 'encryption.key'
 def backup_db(prefix: str = "manual") -> str:
     if not DB_PATH.exists():
         return ""
@@ -63,13 +63,60 @@ def cmd_backup(args: argparse.Namespace) -> None:
 
 
 def cmd_encrypt_db(args: argparse.Namespace) -> None:
-    """Encrypt the SQLite database using a key from CPKB_ENCRYPT_KEY env variable.
-    The encrypted file is written with a .enc suffix.
+    """Encrypt the SQLite database.
+    Generates a Fernet key if missing, stores it at the specified location (or default),
+    creates a backup before encryption, writes encrypted file with .enc suffix,
+    and records the key location in ~/.local/share/cpkb/key_location.txt.
     """
-    key = os.getenv('CPKB_ENCRYPT_KEY')
-    if not key:
-        print('Error: CPKB_ENCRYPT_KEY not set.', file=sys.stderr)
+    # Determine key path
+    key_path = Path(args.key_path) if getattr(args, 'key_path', None) else KEY_PATH
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure encryption key exists
+    if key_path.exists():
+        key = key_path.read_text().strip()
+    else:
+        from cryptography.fernet import Fernet
+        key = Fernet.generate_key().decode()
+        key_path.write_text(key)
+        print(f'Generated new encryption key at {key_path}')
+    # Record key location
+    config_dir = Path.home() / '.local' / 'share' / 'cpkb'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / 'key_location.txt').write_text(str(key_path))
+    # Backup before encryption
+    backup_path = backup_db('pre_encrypt')
+    if backup_path:
+        print(f'Backup created at {backup_path}')
+    # Encrypt the database
+    if not DB_PATH.exists():
+        print('No database to encrypt.', file=sys.stderr)
         return
+    with open(DB_PATH, 'rb') as fdb:
+        data = fdb.read()
+    from cryptography.fernet import Fernet
+    f = Fernet(key.encode())
+    encrypted = f.encrypt(data)
+    enc_path = DB_PATH.with_suffix('.enc')
+    with open(enc_path, 'wb') as fe:
+        fe.write(encrypted)
+    print(f'Encrypted database written to {enc_path}')
+    """Encrypt the SQLite database.
+    Generates a Fernet key if missing, stores it at KEY_PATH,
+    creates a backup before encryption, and writes encrypted file with .enc suffix.
+    """
+    # Ensure encryption key exists
+    if KEY_PATH.exists():
+        key = KEY_PATH.read_text().strip()
+    else:
+        from cryptography.fernet import Fernet
+        key = Fernet.generate_key().decode()
+        KEY_PATH.write_text(key)
+        print(f'Generated new encryption key at {KEY_PATH}')
+    # Backup before encryption
+    backup_path = backup_db('pre_encrypt')
+    if backup_path:
+        print(f'Backup created at {backup_path}')
+    # Encrypt the database
     if not DB_PATH.exists():
         print('No database to encrypt.', file=sys.stderr)
         return
@@ -88,7 +135,18 @@ def cmd_decrypt_db(args: argparse.Namespace) -> None:
     """Decrypt the previously encrypted SQLite database using the key from CPKB_ENCRYPT_KEY.
     Restores the original DB_PATH file.
     """
-    key = os.getenv('CPKB_ENCRYPT_KEY')
+
+    # Load encryption key from stored file
+    if KEY_PATH.exists():
+        key = KEY_PATH.read_text().strip()
+    else:
+        print('Error: Encryption key not found. Run encrypt-db first to generate one.', file=sys.stderr)
+        return
+    # Backup current DB before decrypting (if exists)
+    backup_path = backup_db('pre_decrypt')
+    if backup_path:
+        print(f'Backup created at {backup_path}')
+
     if not key:
         print('Error: CPKB_ENCRYPT_KEY not set.', file=sys.stderr)
         return
@@ -822,9 +880,11 @@ def main() -> None:
     parser_backup.set_defaults(func=cmd_backup)
 
     parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database")
+    parser_encrypt.add_argument('--key-path', help='Custom path for encryption key')
     parser_encrypt.set_defaults(func=cmd_encrypt_db)
 
     parser_decrypt = subparsers.add_parser("decrypt-db", help="Decrypt the database")
+    parser_decrypt.add_argument('--key-path', help='Custom path for encryption key')
     parser_decrypt.set_defaults(func=cmd_decrypt_db)
 
     # V2 Commands
