@@ -17,12 +17,29 @@ CPKB is a local, terminal-first knowledge base designed to store, search, and tr
 
 ## Installation
 
-CPKB V2 is a proper Python package. Install it via pip:
+CPKB V2 is a proper Python package. For normal usage, install it via pip:
 
 ```bash
 git clone https://github.com/Aaravshah2907/cpkb.git
 cd cpkb
 pip install -e .
+```
+
+### Local Development & Testing
+
+If you wish to contribute to the codebase or run the unit tests locally to verify the CLI and TUI functionality, set up a virtual environment and run `pytest`:
+
+```bash
+# 1. Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+
+# 2. Install CPKB and test dependencies
+pip install -e .
+pip install pytest pytest-asyncio pytest-mock cryptography
+
+# 3. Run the test suite
+pytest tests/
 ```
 
 ## Platform‑specific dependencies
