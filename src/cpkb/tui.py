@@ -5,6 +5,9 @@ from textual.binding import Binding
 
 # We can import init_db from cli since they are in the same package
 from .cli import init_db
+import platform, os
+if platform.system().lower() == "windows":
+    os.system("")
 
 class SnippetApp(App):
     """A Textual App to browse CPKB Snippets."""

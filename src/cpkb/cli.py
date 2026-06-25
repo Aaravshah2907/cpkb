@@ -550,7 +550,10 @@ def cmd_fzf(args: argparse.Namespace) -> None:
             class DummyArgs: id = selected_id
             cmd_show(DummyArgs())
     except FileNotFoundError:
-        print("Error: 'fzf' is not installed. Please install it (e.g., 'brew install fzf').", file=sys.stderr)
+        if platform.system().lower() == "windows":
+            print("Error: 'fzf' is not installed. Install it via 'scoop install fzf' or 'choco install fzf'.", file=sys.stderr)
+        else:
+            print("Error: 'fzf' is not installed. Please install it (e.g., 'brew install fzf').", file=sys.stderr)
 
 def cmd_copy(args: argparse.Namespace) -> None:
     conn = init_db()
