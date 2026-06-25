@@ -46,7 +46,7 @@ Here are the commands available in Version 2.0:
 ### New V2 Commands
 - `cpkb tui`: Launch the interactive Textual TUI (press `c` to copy a snippet).
 - `cpkb fzf`: Interactively fuzzy search snippets using `fzf`.
-- `cpkb insert <id>`: Instantly copy the snippet's code to your clipboard (`pbcopy`).
+- `cpkb copy <id> [-f <file>]`: Instantly copy the snippet's code to your clipboard (`pbcopy`), or append to a file.
 - `cpkb revise`: Starts a spaced-repetition prompt testing you on random snippets.
 
 ## Directory Structure

@@ -529,7 +529,7 @@ def cmd_fzf(args: argparse.Namespace) -> None:
     except FileNotFoundError:
         print("Error: 'fzf' is not installed. Please install it (e.g., 'brew install fzf').", file=sys.stderr)
 
-def cmd_insert(args: argparse.Namespace) -> None:
+def cmd_copy(args: argparse.Namespace) -> None:
     conn = init_db()
     cursor = conn.cursor()
     cursor.execute("SELECT code FROM snippets WHERE id = ?", (args.id,))
@@ -641,10 +641,10 @@ def main() -> None:
     parser_fzf = subparsers.add_parser("fzf", help="Search snippets using fzf")
     parser_fzf.set_defaults(func=cmd_fzf)
     
-    parser_insert = subparsers.add_parser("insert", help="Insert a snippet to clipboard or file")
-    parser_insert.add_argument("id", help="Snippet ID")
-    parser_insert.add_argument("-f", "--file", help="File to append to (optional)")
-    parser_insert.set_defaults(func=cmd_insert)
+    parser_copy = subparsers.add_parser("copy", help="Copy a snippet to the clipboard or file")
+    parser_copy.add_argument("id", help="Snippet ID")
+    parser_copy.add_argument("-f", "--file", help="File to append to (optional)")
+    parser_copy.set_defaults(func=cmd_copy)
     
     parser_revise = subparsers.add_parser("revise", help="Spaced repetition / random revision mode")
     parser_revise.set_defaults(func=cmd_revise)
