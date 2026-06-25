@@ -1,5 +1,7 @@
 # Competitive Programming Knowledge Base (CPKB)
 
+![CPKB TUI Gallery](/intro-image.png)
+
 CPKB is a local, terminal-first knowledge base designed to store, search, and track usages of competitive programming snippets, algorithms, and tricks. It uses SQLite for storage, keeping your snippets incredibly fast and perfectly organised.
 
 ## Version 2.0 Features
@@ -25,15 +27,18 @@ pip install -e .
 
 ## Platform‑specific dependencies
 
-- **macOS**: `pbcopy` is built‑in. Install `fzf` via `brew install fzf`.
-- **Linux**: Install clipboard utilities (`xclip` or `xsel`) and `fzf` via your package manager, e.g. `sudo apt-get install xclip fzf`.
-- **Windows**: Clipboard support uses the built‑in `clip`. Install `fzf` via Scoop (`scoop install fzf`) or Chocolatey (`choco install fzf`).
+| Platform | Clipboard utility   | Fuzzy finder                               |
+|----------|---------------------|--------------------------------------------|
+| macOS    | `pbcopy` (built‑in) | `brew install fzf`                         |
+| Linux    | `xclip` or `xsel`   | `sudo apt-get install fzf`                 |
+| Windows  | `clip` (built‑in)   | `scoop install fzf` or `choco install fzf` |
 
 ## Usage
 
 Here are the commands available in Version 2.0:
 
 ### Core V1 Commands
+
 - `cpkb add`: Add a new snippet interactively.
 - `cpkb list`: List all snippets.
 - `cpkb show <id>`: Show details, code, and usages of a specific snippet.
@@ -50,6 +55,7 @@ Here are the commands available in Version 2.0:
 - `cpkb backup`: Manually trigger a backup of the SQLite database.
 
 ### New V2 Commands
+
 - `cpkb tui`: Launch the interactive Textual TUI (press `c` to copy a snippet).
 - `cpkb fzf`: Interactively fuzzy search snippets using `fzf`.
 - `cpkb copy <id> [-f <file>]`: Instantly copy the snippet's code to your system clipboard (uses `pbcopy` on macOS, `xclip`/`xsel` on Linux, `clip` on Windows) or append to a file.
@@ -59,7 +65,7 @@ Here are the commands available in Version 2.0:
 
 Data is kept completely separate from the code repo. The application automatically creates the required directories on first run:
 
-```
+```txt
 ~/.local/share/cpkb/
 ├── snippets.db
 ├── attachments/
