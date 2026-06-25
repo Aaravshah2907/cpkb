@@ -33,7 +33,9 @@ class SnippetApp(App):
         Binding("r", "refresh", "Refresh List"),
         Binding("c", "copy_snippet", "Copy Code"),
         Binding("/", "focus_search", "Search"),
+        Binding("a", "add_snippet", "Add"),
         Binding("e", "edit_snippet", "Edit"),
+        Binding("u", "use_snippet", "Use"),
         Binding("d", "delete_snippet", "Delete"),
     ]
 
@@ -125,6 +127,39 @@ class SnippetApp(App):
                 cmd_delete(DummyArgs())
                 
             await self.action_refresh()
+
+    async def action_add_snippet(self) -> None:
+        if isinstance(self.focused, Input): return
+        
+        with self.suspend():
+            from .cli import cmd_add
+            class DummyArgs: pass
+            cmd_add(DummyArgs())
+            
+        await self.action_refresh()
+        self.notify("Added new snippet!")
+
+    async def action_use_snippet(self) -> None:
+        if isinstance(self.focused, Input): return
+        list_view = self.query_one("#snippet-list", ListView)
+        if list_view.highlighted_child and list_view.highlighted_child.id:
+            snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            
+            with self.suspend():
+                print(f"--- Recording usage for {snippet_id} ---")
+                try:
+                    file_path = input("File path where used: ").strip()
+                    if file_path:
+                        from .cli import cmd_use
+                        class DummyArgs: 
+                            id = snippet_id
+                            file = file_path
+                        cmd_use(DummyArgs())
+                except EOFError:
+                    pass
+                
+            await self.action_refresh()
+            self.notify(f"Usage recorded for {snippet_id}!")
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if not event.item.id:
