@@ -3,6 +3,7 @@ from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown,
 from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
 from textual.screen import ModalScreen
+from textual.reactive import reactive
 
 from .db import (
     init_db, add_snippet, get_snippet_fields, update_snippet,
@@ -26,13 +27,18 @@ class AddSnippetModal(ModalScreen[dict]):
     }
     #add-dialog {
         padding: 1 2;
-        width: 70;
-        height: 32;
+        width: 80;
+        height: 80%;
         border: thick $background 80%;
         background: $surface;
+        overflow-y: auto;
     }
     #add-dialog Label {
         margin-top: 1;
+    }
+    #add-dialog #code-input {
+        min-height: 10;
+        height: 1fr;
     }
     """
     def compose(self) -> ComposeResult:
@@ -75,13 +81,18 @@ class EditSnippetModal(ModalScreen[dict]):
     }
     #edit-dialog {
         padding: 1 2;
-        width: 70;
-        height: 32;
+        width: 80;
+        height: 80%;
         border: thick $background 80%;
         background: $surface;
+        overflow-y: auto;
     }
     #edit-dialog Label {
         margin-top: 1;
+    }
+    #edit-dialog #code-input {
+        min-height: 10;
+        height: 1fr;
     }
     """
 
@@ -254,12 +265,10 @@ class SnippetApp(App):
 
     CSS = """
     #left-pane {
-        width: 35%;
         border-right: solid $primary;
         height: 100%;
     }
     #right-pane {
-        width: 65%;
         padding: 1 2;
         height: 100%;
         overflow-y: auto;
@@ -268,6 +277,8 @@ class SnippetApp(App):
         padding: 1;
     }
     """
+
+    left_pane_width: reactive[int] = reactive(35)
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
@@ -279,6 +290,8 @@ class SnippetApp(App):
         Binding("ctrl+u", "use_snippet", "Use"),
         Binding("ctrl+d", "delete_snippet", "Delete"),
         Binding("ctrl+t", "edit_tags", "Edit Tags"),
+        Binding("left_square_bracket", "shrink_left", "Shrink Left", show=False),
+        Binding("right_square_bracket", "grow_left", "Grow Left", show=False),
     ]
 
     def compose(self) -> ComposeResult:
@@ -291,9 +304,26 @@ class SnippetApp(App):
                 yield Markdown("Select a snippet from the list to view its contents.", id="snippet-view")
         yield Footer()
 
+    def watch_left_pane_width(self, value: int) -> None:
+        """Update pane widths when the reactive property changes."""
+        try:
+            self.query_one("#left-pane").styles.width = f"{value}%"
+            self.query_one("#right-pane").styles.width = f"{100 - value}%"
+        except Exception:
+            pass  # widgets not yet mounted
+
+    def action_shrink_left(self) -> None:
+        """Shrink the left pane by 5%."""
+        self.left_pane_width = max(15, self.left_pane_width - 5)
+
+    def action_grow_left(self) -> None:
+        """Grow the left pane by 5%."""
+        self.left_pane_width = min(70, self.left_pane_width + 5)
+
     async def on_mount(self) -> None:
         self.conn = init_db()
         self.cursor = self.conn.cursor()
+        self.watch_left_pane_width(self.left_pane_width)
         await self.action_refresh()
 
     def action_focus_search(self) -> None:
