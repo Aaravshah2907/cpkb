@@ -19,6 +19,7 @@ from .db import (
     search_snippets_full,
     add_usage, get_usages, get_usage, update_usage,
     add_tag, remove_tag, get_stats, get_random_snippet, get_all_snippet_ids,
+    get_due_snippet, get_unreviewed_snippet, upsert_review, get_srs_stats,
     APP_DIR, DB_PATH, KEY_PATH,
 )
 
@@ -64,85 +65,112 @@ def cmd_backup(args: argparse.Namespace) -> None:
 # Encryption
 # ---------------------------------------------------------------------------
 
-def cmd_encrypt_db(args: argparse.Namespace) -> None:
-    """Encrypt the SQLite database.
+def _derive_fernet_key(password: str, salt: bytes) -> bytes:
+    """Derive a Fernet-compatible key from *password* and *salt* using PBKDF2."""
+    import base64
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
 
-    Generates a Fernet key if missing, stores it at the specified location
-    (or default), creates a backup before encryption, writes encrypted file
-    with ``.enc`` suffix, and records the key location.
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=600_000,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(password.encode()))
+
+
+def cmd_encrypt_db(args: argparse.Namespace) -> None:
+    """Encrypt the SQLite database using a password.
+
+    Derives a Fernet key from the user's password via PBKDF2-HMAC-SHA256.
+    A random 16-byte salt is generated and prepended to the encrypted output.
+    No key or password is stored on disk — only the salt.
     """
-    from pathlib import Path
+    import getpass
     from cryptography.fernet import Fernet
 
     init_db()
-    key_path = Path(args.key_path) if getattr(args, 'key_path', None) else KEY_PATH
-    key_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Ensure encryption key exists
-    if key_path.exists():
-        key = key_path.read_text().strip()
-    else:
-        key = Fernet.generate_key().decode()
-        key_path.write_text(key)
-        print(f"Generated new encryption key at {key_path}")
+    if not DB_PATH.exists():
+        print("No database to encrypt.", file=sys.stderr)
+        return
 
-    # Record key location
-    config_dir = APP_DIR
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "key_location.txt").write_text(str(key_path))
+    # Prompt for password with confirmation
+    password = getpass.getpass("Enter encryption password: ")
+    if not password:
+        print("Error: Password cannot be empty.", file=sys.stderr)
+        return
+    confirm = getpass.getpass("Confirm password: ")
+    if password != confirm:
+        print("Error: Passwords do not match.", file=sys.stderr)
+        return
 
     # Backup before encryption
     bk = backup_db("pre_encrypt")
     if bk:
         print(f"Backup created at {bk}")
 
-    if not DB_PATH.exists():
-        print("No database to encrypt.", file=sys.stderr)
-        return
+    # Generate a random salt and derive key
+    salt = os.urandom(16)
+    key = _derive_fernet_key(password, salt)
 
     with open(DB_PATH, "rb") as fdb:
         data = fdb.read()
 
-    f = Fernet(key.encode())
+    f = Fernet(key)
     encrypted = f.encrypt(data)
+
+    # Write salt (16 bytes) + encrypted data
     enc_path = DB_PATH.with_suffix(".enc")
     with open(enc_path, "wb") as fe:
-        fe.write(encrypted)
+        fe.write(salt + encrypted)
     print(f"Encrypted database written to {enc_path}")
+
+    # Clean up legacy plaintext key file if it exists
+    if KEY_PATH.exists():
+        KEY_PATH.unlink()
+        print("Removed legacy plaintext key file.")
+    legacy_loc = APP_DIR / "key_location.txt"
+    if legacy_loc.exists():
+        legacy_loc.unlink()
 
 
 def cmd_decrypt_db(args: argparse.Namespace) -> None:
-    """Decrypt the previously encrypted SQLite database."""
+    """Decrypt the previously encrypted SQLite database using a password."""
+    import getpass
     from cryptography.fernet import Fernet
 
     init_db()
-    if KEY_PATH.exists():
-        key = KEY_PATH.read_text().strip()
-    else:
-        print("Error: Encryption key not found. Run encrypt-db first to generate one.", file=sys.stderr)
-        return
-
-    bk = backup_db("pre_decrypt")
-    if bk:
-        print(f"Backup created at {bk}")
-
-    if not key:
-        print("Error: Encryption key is empty.", file=sys.stderr)
-        return
 
     enc_path = DB_PATH.with_suffix(".enc")
     if not enc_path.exists():
         print("No encrypted database found.", file=sys.stderr)
         return
 
-    with open(enc_path, "rb") as fe:
-        encrypted = fe.read()
+    password = getpass.getpass("Enter decryption password: ")
+    if not password:
+        print("Error: Password cannot be empty.", file=sys.stderr)
+        return
 
-    f = Fernet(key.encode())
+    # Backup before decryption
+    bk = backup_db("pre_decrypt")
+    if bk:
+        print(f"Backup created at {bk}")
+
+    with open(enc_path, "rb") as fe:
+        raw = fe.read()
+
+    # First 16 bytes are the salt
+    salt = raw[:16]
+    encrypted = raw[16:]
+
+    key = _derive_fernet_key(password, salt)
+    f = Fernet(key)
     try:
         data = f.decrypt(encrypted)
-    except Exception as e:
-        print(f"Decryption failed: {e}", file=sys.stderr)
+    except Exception:
+        print("Decryption failed: wrong password or corrupted file.", file=sys.stderr)
         return
 
     with open(DB_PATH, "wb") as fdb:
@@ -446,18 +474,39 @@ def cmd_random(args: argparse.Namespace) -> None:
 
 
 def cmd_revise(args: argparse.Namespace) -> None:
+    """True spaced-repetition revision using the SM-2 algorithm.
+
+    Prioritises overdue snippets, then falls back to never-reviewed
+    snippets, then picks a random one.  After revealing the code the
+    user rates their recall quality (0-5) and the schedule is updated.
+    """
     conn = init_db()
     cursor = conn.cursor()
-    row = get_random_snippet(cursor)
+
+    # 1. Pick the most overdue snippet
+    row = get_due_snippet(cursor)
+    source = "due for review"
+
+    # 2. If nothing is due, pick a never-reviewed snippet
+    if not row:
+        row = get_unreviewed_snippet(cursor)
+        source = "never reviewed"
+
+    # 3. Last resort: any random snippet
+    if not row:
+        row = get_random_snippet(cursor)
+        source = "random"
 
     if not row:
-        print("No snippets found.")
+        print("No snippets found. Add some with 'cpkb add'.")
         return
 
-    print(f"Do you remember this snippet? [ID: {row[0]}]")
-    print(f"Title:       {row[1]}")
-    if row[2]:
-        print(f"Description: {row[2]}")
+    snippet_id, title, description, code = row
+
+    print(f"\n📖  Revise this snippet ({source})  [ID: {snippet_id}]")
+    print(f"Title:       {title}")
+    if description:
+        print(f"Description: {description}")
 
     try:
         input("\nPress Enter to reveal the code...")
@@ -466,8 +515,54 @@ def cmd_revise(args: argparse.Namespace) -> None:
         sys.exit(0)
 
     print("\n--- Code ---\n")
-    print(row[3])
+    print(code)
     print("\n------------")
+
+    # Quality rating
+    print("\nRate your recall quality:")
+    print("  0 — Complete blackout")
+    print("  1 — Wrong, but recognised the answer")
+    print("  2 — Wrong, but answer felt familiar")
+    print("  3 — Correct, but with serious difficulty")
+    print("  4 — Correct, with some hesitation")
+    print("  5 — Perfect recall")
+
+    try:
+        raw = input("\nQuality [0-5]: ").strip()
+    except EOFError:
+        print("\nSkipped rating.")
+        return
+
+    if not raw.isdigit() or int(raw) not in range(6):
+        print("Invalid rating — skipping schedule update.")
+        return
+
+    quality = int(raw)
+    result = upsert_review(cursor, conn, snippet_id, quality)
+
+    print(f"\n✅  Schedule updated for {snippet_id}:")
+    print(f"   Next review in {result['interval']} day(s)")
+    print(f"   Ease factor: {result['ease_factor']}")
+    print(f"   Repetitions: {result['repetitions']}")
+
+
+def cmd_srs_stats(args: argparse.Namespace) -> None:
+    """Display spaced-repetition statistics."""
+    conn = init_db()
+    cursor = conn.cursor()
+    stats = get_srs_stats(cursor)
+
+    print("\n📊  Spaced-Repetition Statistics")
+    print("-" * 35)
+    print(f"Total snippets:   {stats['total_snippets']}")
+    print(f"Reviewed:         {stats['reviewed']}")
+    print(f"Never reviewed:   {stats['never_reviewed']}")
+    print(f"Due now:          {stats['due_now']}")
+    if stats['avg_ease_factor'] is not None:
+        print(f"Avg ease factor:  {stats['avg_ease_factor']}")
+    else:
+        print("Avg ease factor:  N/A (no reviews yet)")
+    print()
 
 
 # ---------------------------------------------------------------------------
@@ -801,12 +896,10 @@ def main() -> None:
     parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
     parser_backup.set_defaults(func=cmd_backup)
 
-    parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database")
-    parser_encrypt.add_argument('--key-path', help='Custom path for encryption key')
+    parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database with a password")
     parser_encrypt.set_defaults(func=cmd_encrypt_db)
 
-    parser_decrypt = subparsers.add_parser("decrypt-db", help="Decrypt the database")
-    parser_decrypt.add_argument('--key-path', help='Custom path for encryption key')
+    parser_decrypt = subparsers.add_parser("decrypt-db", help="Decrypt the database with a password")
     parser_decrypt.set_defaults(func=cmd_decrypt_db)
 
     parser_sync = subparsers.add_parser("sync", help="Sync database to Git remote (or rsync)")
@@ -824,8 +917,11 @@ def main() -> None:
     parser_copy.add_argument("-f", "--file", help="File to append to (optional)")
     parser_copy.set_defaults(func=cmd_copy)
 
-    parser_revise = subparsers.add_parser("revise", help="Spaced repetition / random revision mode")
+    parser_revise = subparsers.add_parser("revise", help="Spaced-repetition revision (SM-2 algorithm)")
     parser_revise.set_defaults(func=cmd_revise)
+
+    parser_srs_stats = subparsers.add_parser("srs-stats", help="Show spaced-repetition statistics")
+    parser_srs_stats.set_defaults(func=cmd_srs_stats)
 
     args = parser.parse_args()
     args.func(args)

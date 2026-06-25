@@ -12,7 +12,8 @@ CPKB is a local, terminal-first knowledge base designed to store, search, and tr
 - **Textual TUI**: A beautiful terminal UI for browsing and copying your snippets.
 - **FZF Integration**: Fuzzy find snippets directly in the terminal.
 - **Snippet Insertion**: Instantly copy code to the clipboard or append to files.
-- **Spaced Repetition**: Revise your knowledge base using the `revise` command.
+- **Spaced Repetition (SM-2)**: Revise your knowledge base using the `revise` command with a true SM-2 spaced-repetition algorithm that tracks ease, interval, and repetitions per snippet.
+- **Password-based Encryption**: Encrypt your database at rest with a password (PBKDF2-HMAC-SHA256 key derivation). No keys stored on disk.
 - **XDG Base Directory compliant**: Stores your data safely in `~/.local/share/cpkb`.
 
 ## Installation
@@ -76,7 +77,10 @@ Here are the commands available in Version 2.0:
 - `cpkb tui`: Launch the interactive Textual TUI (press `c` to copy a snippet).
 - `cpkb fzf`: Interactively fuzzy search snippets using `fzf`.
 - `cpkb copy <id> [-f <file>]`: Instantly copy the snippet's code to your system clipboard (uses `pbcopy` on macOS, `xclip`/`xsel` on Linux, `clip` on Windows) or append to a file.
-- `cpkb revise`: Starts a spaced-repetition prompt testing you on random snippets.
+- `cpkb revise`: Start a spaced-repetition session — the SM-2 algorithm selects the most overdue snippet, shows the title, then reveals the code. Rate your recall (0–5) to schedule the next review.
+- `cpkb srs-stats`: Show spaced-repetition statistics (total reviewed, due now, avg ease factor).
+- `cpkb encrypt-db`: Encrypt the database with a password (PBKDF2 + Fernet). No key files are stored.
+- `cpkb decrypt-db`: Decrypt the database by entering your password.
 
 ## Directory Structure
 
@@ -96,6 +100,7 @@ Data is kept completely separate from the code repo. The application automatical
 
 - Python 3.11+
 - `textual`
+- `cryptography` (for `encrypt-db` / `decrypt-db`)
 - `fzf` (Optional, for `cpkb fzf`)
 - macOS (uses `pbcopy` for clipboard interactions)
 

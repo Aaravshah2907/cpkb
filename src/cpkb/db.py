@@ -83,6 +83,18 @@ def init_db() -> sqlite3.Connection:
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reviews (
+            snippet_id TEXT PRIMARY KEY,
+            ease_factor REAL NOT NULL DEFAULT 2.5,
+            interval INTEGER NOT NULL DEFAULT 0,
+            repetitions INTEGER NOT NULL DEFAULT 0,
+            next_review TEXT NOT NULL,
+            last_reviewed TEXT NOT NULL,
+            FOREIGN KEY(snippet_id) REFERENCES snippets(id) ON DELETE CASCADE
+        )
+    ''')
+
     if db_exists and not tags_exists:
         cursor.execute("SELECT id, tags FROM snippets")
         for snip_id, tags_str in cursor.fetchall():
@@ -246,6 +258,132 @@ def get_random_snippet(cursor: sqlite3.Cursor) -> tuple | None:
     """Return a random ``(id, title, description, code)`` tuple or ``None``."""
     cursor.execute("SELECT id, title, description, code FROM snippets ORDER BY RANDOM() LIMIT 1")
     return cursor.fetchone()
+
+
+# ---------------------------------------------------------------------------
+# Spaced-Repetition (SM-2) Helpers
+# ---------------------------------------------------------------------------
+
+def get_due_snippet(cursor: sqlite3.Cursor) -> tuple | None:
+    """Return the most overdue snippet for review.
+
+    Returns ``(id, title, description, code)`` for the snippet whose
+    ``next_review`` date is the oldest (i.e. most overdue), or ``None``
+    if no snippets are due.
+    """
+    now = _now()
+    cursor.execute('''
+        SELECT s.id, s.title, s.description, s.code
+        FROM snippets s
+        JOIN reviews r ON s.id = r.snippet_id
+        WHERE r.next_review <= ?
+        ORDER BY r.next_review ASC
+        LIMIT 1
+    ''', (now,))
+    return cursor.fetchone()
+
+
+def get_unreviewed_snippet(cursor: sqlite3.Cursor) -> tuple | None:
+    """Return a random snippet that has never been reviewed, or ``None``."""
+    cursor.execute('''
+        SELECT s.id, s.title, s.description, s.code
+        FROM snippets s
+        LEFT JOIN reviews r ON s.id = r.snippet_id
+        WHERE r.snippet_id IS NULL
+        ORDER BY RANDOM()
+        LIMIT 1
+    ''')
+    return cursor.fetchone()
+
+
+def upsert_review(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
+                  snippet_id: str, quality: int) -> dict:
+    """Update the SRS schedule for *snippet_id* using the SM-2 algorithm.
+
+    *quality* is an integer from 0 to 5:
+        0-2  = forgot / incorrect (resets repetitions)
+        3    = correct with serious difficulty
+        4    = correct with some hesitation
+        5    = perfect recall
+
+    Returns a dict with the computed ``ease_factor``, ``interval``,
+    ``repetitions``, and ``next_review`` values.
+    """
+    from datetime import datetime, timedelta, timezone as tz
+
+    quality = max(0, min(5, quality))
+
+    # Fetch existing review data (if any)
+    cursor.execute(
+        "SELECT ease_factor, interval, repetitions FROM reviews WHERE snippet_id = ?",
+        (snippet_id,),
+    )
+    row = cursor.fetchone()
+
+    if row:
+        ef, interval, reps = row
+    else:
+        ef, interval, reps = 2.5, 0, 0
+
+    # SM-2 algorithm
+    if quality >= 3:
+        if reps == 0:
+            interval = 1
+        elif reps == 1:
+            interval = 6
+        else:
+            interval = round(interval * ef)
+        reps += 1
+    else:
+        reps = 0
+        interval = 1
+
+    # Update ease factor (minimum 1.3)
+    ef = ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
+    ef = max(1.3, ef)
+
+    now = datetime.now(tz.utc)
+    next_review = (now + timedelta(days=interval)).isoformat()
+    now_iso = now.isoformat()
+
+    cursor.execute('''
+        INSERT INTO reviews (snippet_id, ease_factor, interval, repetitions, next_review, last_reviewed)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(snippet_id) DO UPDATE SET
+            ease_factor = excluded.ease_factor,
+            interval = excluded.interval,
+            repetitions = excluded.repetitions,
+            next_review = excluded.next_review,
+            last_reviewed = excluded.last_reviewed
+    ''', (snippet_id, ef, interval, reps, next_review, now_iso))
+    conn.commit()
+
+    return {
+        "ease_factor": round(ef, 2),
+        "interval": interval,
+        "repetitions": reps,
+        "next_review": next_review,
+    }
+
+
+def get_srs_stats(cursor: sqlite3.Cursor) -> dict:
+    """Return spaced-repetition statistics."""
+    now = _now()
+    cursor.execute("SELECT COUNT(*) FROM snippets")
+    total = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM reviews")
+    reviewed = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM reviews WHERE next_review <= ?", (now,))
+    due = cursor.fetchone()[0]
+    cursor.execute("SELECT AVG(ease_factor) FROM reviews")
+    avg_ef = cursor.fetchone()[0]
+    return {
+        "total_snippets": total,
+        "reviewed": reviewed,
+        "never_reviewed": total - reviewed,
+        "due_now": due,
+        "avg_ease_factor": round(avg_ef, 2) if avg_ef else None,
+    }
 
 
 def get_all_snippet_ids(cursor: sqlite3.Cursor) -> list[tuple]:

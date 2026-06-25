@@ -19,6 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "textual>=0.47.0",
+    "cryptography>=41.0",
 ]
 
 [project.scripts]
