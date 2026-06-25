@@ -40,6 +40,7 @@ class SnippetApp(App):
         Binding("ctrl+e", "edit_snippet", "Edit"),
         Binding("ctrl+u", "use_snippet", "Use"),
         Binding("ctrl+d", "delete_snippet", "Delete"),
+        Binding("ctrl+t", "edit_tags", "Edit Tags"),
     ]
 
     def compose(self) -> ComposeResult:

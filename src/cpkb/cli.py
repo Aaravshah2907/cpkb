@@ -481,39 +481,65 @@ def cmd_random(args: argparse.Namespace) -> None:
         id = random_id
     cmd_show(DummyArgs())
 
-def cmd_export(args: argparse.Namespace) -> None:
+def cmd_tag_add(args: argparse.Namespace) -> None:
+    """Add a tag to a snippet."""
     conn = init_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, title, description, use_case, tags, code FROM snippets ORDER BY created_at ASC')
-    rows = cursor.fetchall()
-    
-    if not rows:
-        print("No snippets to export.")
+    cursor.execute('SELECT tags FROM snippets WHERE id = ?', (args.id,))
+    row = cursor.fetchone()
+    if not row:
+        print(f"Error: Snippet {args.id} not found.", file=sys.stderr)
         return
-        
-    export_dir = APP_DIR / "exports"
-    export_dir.mkdir(exist_ok=True)
-    
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    export_path = export_dir / f"snippets_{timestamp}.md"
-    
-    with open(export_path, 'w') as f:
-        f.write("# CPKB Export\n\n")
-        f.write(f"Generated at: {datetime.now().isoformat()}\n\n")
-        
-        for row in rows:
-            f.write(f"## {row[0]}: {row[1]}\n\n")
-            if row[2]: f.write(f"**Description:** {row[2]}\n\n")
-            if row[3]: f.write(f"**Use Case:** {row[3]}\n\n")
-            if row[4]: f.write(f"**Tags:** {row[4]}\n\n")
-            f.write("```\n")
-            f.write(row[5])
-            f.write("\n```\n\n")
-            f.write("---\n\n")
-            
-    print(f"Exported {len(rows)} snippets to {export_path}")
+    existing = row[0] or ""
+    tags = {t.strip().lower() for t in existing.split(',') if t.strip()}
+    tags.add(args.tag.strip().lower())
+    new_tags = ', '.join(sorted(tags))
+    cursor.execute('UPDATE snippets SET tags = ?, updated_at = ? WHERE id = ?', (new_tags, datetime.utcnow().isoformat(), args.id))
+    update_tags(cursor, args.id, new_tags)
+    conn.commit()
+    print(f"Tag '{args.tag}' added to snippet {args.id}.")
 
-def cmd_backup(args: argparse.Namespace) -> None:
+def cmd_tag_remove(args: argparse.Namespace) -> None:
+    """Remove a tag from a snippet."""
+    conn = init_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT tags FROM snippets WHERE id = ?', (args.id,))
+    row = cursor.fetchone()
+    if not row:
+        print(f"Error: Snippet {args.id} not found.", file=sys.stderr)
+        return
+    existing = row[0] or ""
+    tags = {t.strip().lower() for t in existing.split(',') if t.strip()}
+    if args.tag.strip().lower() not in tags:
+        print(f"Tag '{args.tag}' not present on snippet {args.id}.")
+        return
+    tags.remove(args.tag.strip().lower())
+    new_tags = ', '.join(sorted(tags))
+    cursor.execute('UPDATE snippets SET tags = ?, updated_at = ? WHERE id = ?', (new_tags, datetime.utcnow().isoformat(), args.id))
+    update_tags(cursor, args.id, new_tags)
+    conn.commit()
+    print(f"Tag '{args.tag}' removed from snippet {args.id}.")
+
+    # Export commands placeholder
+    
+def cmd_sync(args: argparse.Namespace) -> None:
+    """Sync the SQLite DB to a remote location using rsync.
+    Set environment variable CPKB_SYNC_TARGET to the remote destination (e.g., user@host:/path/)."""
+    target = os.getenv('CPKB_SYNC_TARGET')
+    if not target:
+        print('Error: CPKB_SYNC_TARGET not set.', file=sys.stderr)
+        return
+    if not DB_PATH.exists():
+        print('No database to sync.', file=sys.stderr)
+        return
+    # Use rsync for efficient transfer
+    cmd = ['rsync', '-avz', str(DB_PATH), target]
+    try:
+        subprocess.run(cmd, check=True)
+        print(f'Database synced to {target}')
+    except subprocess.CalledProcessError as e:
+        print(f'Sync failed: {e}', file=sys.stderr)
+
     path = backup_db("manual")
     if path:
         print(f"Database backed up successfully to: {path}")
@@ -655,6 +681,10 @@ def main() -> None:
     
     parser_export = subparsers.add_parser("export", help="Export all snippets to a markdown file")
     parser_export.set_defaults(func=cmd_export)
+parser_export_json = subparsers.add_parser("export-json", help="Export snippets to JSON")
+parser_export_json.set_defaults(func=cmd_export_json)
+parser_export_html = subparsers.add_parser("export-html", help="Export snippets to HTML")
+parser_export_html.set_defaults(func=cmd_export_html)
     
     parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
     parser_backup.set_defaults(func=cmd_backup)
