@@ -47,22 +47,22 @@ class SnippetApp(App):
                 yield Markdown("Select a snippet from the list to view its contents.", id="snippet-view")
         yield Footer()
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         self.conn = init_db()
         self.cursor = self.conn.cursor()
-        self.action_refresh()
+        await self.action_refresh()
 
     def action_focus_search(self) -> None:
         self.query_one("#search-input", Input).focus()
 
-    def on_input_changed(self, event: Input.Changed) -> None:
+    async def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "search-input":
-            self.action_refresh(query=event.value)
+            await self.action_refresh(query=event.value)
 
-    def action_refresh(self, query: str = "") -> None:
+    async def action_refresh(self, query: str = "") -> None:
         """Refresh the list of snippets."""
         list_view = self.query_one("#snippet-list", ListView)
-        list_view.clear()
+        await list_view.clear()
         
         if query:
             query_parts = query.lower().split()
@@ -89,6 +89,7 @@ class SnippetApp(App):
 
     def action_copy_snippet(self) -> None:
         """Copy the code of the currently selected snippet to the clipboard."""
+        if isinstance(self.focused, Input): return
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
@@ -98,7 +99,8 @@ class SnippetApp(App):
                 self.copy_to_clipboard(row[0])
                 self.notify(f"Code for {snippet_id} copied to clipboard!", title="Copied!")
 
-    def action_edit_snippet(self) -> None:
+    async def action_edit_snippet(self) -> None:
+        if isinstance(self.focused, Input): return
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
@@ -108,10 +110,11 @@ class SnippetApp(App):
                 class DummyArgs: id = snippet_id
                 cmd_edit(DummyArgs())
                 
-            self.action_refresh()
+            await self.action_refresh()
             self.notify(f"Snippet {snippet_id} updated.")
 
-    def action_delete_snippet(self) -> None:
+    async def action_delete_snippet(self) -> None:
+        if isinstance(self.focused, Input): return
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
@@ -121,7 +124,7 @@ class SnippetApp(App):
                 class DummyArgs: id = snippet_id
                 cmd_delete(DummyArgs())
                 
-            self.action_refresh()
+            await self.action_refresh()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if not event.item.id:
