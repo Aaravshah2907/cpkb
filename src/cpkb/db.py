@@ -199,7 +199,7 @@ def recent_snippets(cursor: sqlite3.Cursor, limit: int = 10) -> list[tuple]:
 
 
 def search_snippets(cursor: sqlite3.Cursor, query: str) -> list[tuple]:
-    """Full-text search across title, description, tags, and code.
+    """Full-text search across title, description, tags, id, and code.
 
     All whitespace-separated words in *query* must match (AND logic).
     Returns ``(id, title, tags)`` tuples.
@@ -211,9 +211,9 @@ def search_snippets(cursor: sqlite3.Cursor, query: str) -> list[tuple]:
         like_str = f"%{part}%"
         conditions.append(
             "(LOWER(title) LIKE ? OR LOWER(description) LIKE ? "
-            "OR LOWER(tags) LIKE ? OR LOWER(code) LIKE ?)"
+            "OR LOWER(tags) LIKE ? OR LOWER(code) LIKE ? OR LOWER(id) LIKE ?)"
         )
-        params.extend([like_str, like_str, like_str, like_str])
+        params.extend([like_str, like_str, like_str, like_str, like_str])
 
     sql = ("SELECT id, title, tags FROM snippets WHERE "
            + " AND ".join(conditions)
@@ -231,9 +231,9 @@ def search_snippets_full(cursor: sqlite3.Cursor, query: str) -> list[tuple]:
         like_str = f"%{part}%"
         conditions.append(
             "(LOWER(title) LIKE ? OR LOWER(description) LIKE ? "
-            "OR LOWER(tags) LIKE ? OR LOWER(code) LIKE ?)"
+            "OR LOWER(tags) LIKE ? OR LOWER(code) LIKE ? OR LOWER(id) LIKE ?)"
         )
-        params.extend([like_str, like_str, like_str, like_str])
+        params.extend([like_str, like_str, like_str, like_str, like_str])
 
     sql = ("SELECT id, title FROM snippets WHERE "
            + " AND ".join(conditions)

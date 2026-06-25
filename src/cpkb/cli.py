@@ -16,6 +16,7 @@ from .db import (
     init_db, backup_db, generate_id, update_tags,
     add_snippet, get_snippet, get_snippet_fields, update_snippet,
     delete_snippet, list_snippets, recent_snippets, search_snippets,
+    search_snippets_full,
     add_usage, get_usages, get_usage, update_usage,
     add_tag, remove_tag, get_stats, get_random_snippet, get_all_snippet_ids,
     APP_DIR, DB_PATH, KEY_PATH,
@@ -312,6 +313,15 @@ def cmd_search(args: argparse.Namespace) -> None:
     conn = init_db()
     cursor = conn.cursor()
     _print_list(search_snippets(cursor, args.query))
+
+def cmd_query(args: argparse.Namespace) -> None:
+    """Scripting-friendly query command that outputs 'id | title'."""
+    conn = init_db()
+    cursor = conn.cursor()
+    
+    rows = search_snippets_full(cursor, args.query)
+    for row in rows[:args.limit]:
+        print(f"{row[0]} | {row[1]}")
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +753,11 @@ def main() -> None:
     parser_search = subparsers.add_parser("search", help="Search snippets")
     parser_search.add_argument("query", help="Search query (multiple words will be AND'ed)")
     parser_search.set_defaults(func=cmd_search)
+
+    parser_query = subparsers.add_parser("query", help="Search snippets (scripting friendly)")
+    parser_query.add_argument("query", help="Search query")
+    parser_query.add_argument("--limit", type=int, default=5, help="Number of results to return")
+    parser_query.set_defaults(func=cmd_query)
 
     parser_use = subparsers.add_parser("use", help="Record usage of a snippet")
     parser_use.add_argument("id", help="Snippet ID")
