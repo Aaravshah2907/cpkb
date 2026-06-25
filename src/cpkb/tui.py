@@ -129,36 +129,181 @@ class SnippetApp(App):
                 
             await self.action_refresh()
 
-    async def action_add_snippet(self) -> None:
-        
-        with self.suspend():
-            from .cli import cmd_add
-            class DummyArgs: pass
-            cmd_add(DummyArgs())
+from textual.screen import ModalScreen
+from textual.widgets import Button, TextArea
+
+class AddSnippetModal(ModalScreen[dict]):
+    CSS = """
+    AddSnippetModal {
+        align: center middle;
+    }
+    #add-dialog {
+        padding: 1 2;
+        width: 60;
+        height: 30;
+        border: thick $background 80%;
+        background: $surface;
+    }
+    """
+    def compose(self) -> ComposeResult:
+        with Vertical(id="add-dialog"):
+            yield Label("Title:")
+            yield Input(id="title-input")
+            yield Label("Description:")
+            yield Input(id="desc-input")
+            yield Label("Use Case:")
+            yield Input(id="use-input")
+            yield Label("Tags:")
+            yield Input(id="tags-input")
+            yield Label("Code:")
+            yield TextArea(id="code-input", language="python")
+            with Horizontal():
+                yield Button("Save", variant="success", id="save-btn")
+                yield Button("Cancel", variant="error", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save-btn":
+            title = self.query_one("#title-input", Input).value
+            desc = self.query_one("#desc-input", Input).value
+            use = self.query_one("#use-input", Input).value
+            tags = self.query_one("#tags-input", Input).value
+            code = self.query_one("#code-input", TextArea).text
+            if title and code:
+                self.dismiss({"title": title, "desc": desc, "use": use, "tags": tags, "code": code})
+            else:
+                self.notify("Title and Code are required", severity="error")
+        else:
+            self.dismiss(None)
+
+class EditTagsModal(ModalScreen[dict]):
+    CSS = """
+    EditTagsModal {
+        align: center middle;
+    }
+    #tags-dialog {
+        padding: 1 2;
+        width: 40;
+        height: 15;
+        border: thick $background 80%;
+        background: $surface;
+    }
+    """
+    def compose(self) -> ComposeResult:
+        with Vertical(id="tags-dialog"):
+            yield Label("Action (add/remove):")
+            yield Input(placeholder="add or remove", id="action-input")
+            yield Label("Tag:")
+            yield Input(id="tag-input")
+            with Horizontal():
+                yield Button("Save", variant="success", id="save-btn")
+                yield Button("Cancel", variant="error", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save-btn":
+            action = self.query_one("#action-input", Input).value.lower()
+            tag = self.query_one("#tag-input", Input).value
+            if action in ['a', 'add', 'r', 'remove'] and tag:
+                self.dismiss({"action": "add" if action.startswith('a') else "remove", "tag": tag})
+            else:
+                self.notify("Invalid action or empty tag", severity="error")
+        else:
+            self.dismiss(None)
+
+class UseSnippetModal(ModalScreen[dict]):
+    CSS = """
+    UseSnippetModal {
+        align: center middle;
+    }
+    #use-dialog {
+        padding: 1 2;
+        width: 50;
+        height: 15;
+        border: thick $background 80%;
+        background: $surface;
+    }
+    """
+    def compose(self) -> ComposeResult:
+        with Vertical(id="use-dialog"):
+            yield Label("File path where used:")
+            yield Input(id="file-input")
+            with Horizontal():
+                yield Button("Save", variant="success", id="save-btn")
+                yield Button("Cancel", variant="error", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save-btn":
+            file_path = self.query_one("#file-input", Input).value
+            if file_path:
+                self.dismiss({"file": file_path})
+            else:
+                self.notify("File path is required", severity="error")
+        else:
+            self.dismiss(None)
+
+    async def action_edit_tags(self) -> None:
+        list_view = self.query_one("#snippet-list", ListView)
+        if list_view.highlighted_child and list_view.highlighted_child.id:
+            snippet_id = list_view.highlighted_child.id.replace("item_", "")
             
-        await self.action_refresh()
-        self.notify("Added new snippet!")
+            def check_result(result: dict | None) -> None:
+                if result:
+                    if result["action"] == "add":
+                        from .cli import cmd_tag_add
+                        class DummyArgs:
+                            id = snippet_id
+                            tag = result["tag"]
+                        cmd_tag_add(DummyArgs())
+                    elif result["action"] == "remove":
+                        from .cli import cmd_tag_remove
+                        class DummyArgs:
+                            id = snippet_id
+                            tag = result["tag"]
+                        cmd_tag_remove(DummyArgs())
+                    self.run_worker(self.action_refresh())
+                    self.notify(f"Tags updated for {snippet_id}!")
+            
+            self.push_screen(EditTagsModal(), check_result)
+
+    async def action_add_snippet(self) -> None:
+        def check_result(result: dict | None) -> None:
+            if result:
+                conn = init_db()
+                cursor = conn.cursor()
+                from .cli import generate_id, update_tags
+                from datetime import datetime
+                
+                snippet_id = generate_id(cursor)
+                now = datetime.utcnow().isoformat()
+                
+                cursor.execute('''
+                    INSERT INTO snippets (id, title, description, use_case, tags, code, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (snippet_id, result["title"], result["desc"], result["use"], result["tags"], result["code"], now, now))
+                
+                update_tags(cursor, snippet_id, result["tags"])
+                conn.commit()
+                
+                self.run_worker(self.action_refresh())
+                self.notify(f"Added snippet {snippet_id}!")
+                
+        self.push_screen(AddSnippetModal(), check_result)
 
     async def action_use_snippet(self) -> None:
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
             
-            with self.suspend():
-                print(f"--- Recording usage for {snippet_id} ---")
-                try:
-                    file_path = input("File path where used: ").strip()
-                    if file_path:
-                        from .cli import cmd_use
-                        class DummyArgs: 
-                            id = snippet_id
-                            file = file_path
-                        cmd_use(DummyArgs())
-                except EOFError:
-                    pass
-                
-            await self.action_refresh()
-            self.notify(f"Usage recorded for {snippet_id}!")
+            def check_result(result: dict | None) -> None:
+                if result:
+                    from .cli import cmd_use
+                    class DummyArgs: 
+                        id = snippet_id
+                        file = result["file"]
+                    cmd_use(DummyArgs())
+                    self.run_worker(self.action_refresh())
+                    self.notify(f"Usage recorded for {snippet_id}!")
+                    
+            self.push_screen(UseSnippetModal(), check_result)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if not event.item.id:
