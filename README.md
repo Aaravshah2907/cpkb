@@ -18,10 +18,16 @@ CPKB is a local, terminal-first knowledge base designed to store, search, and tr
 CPKB V2 is a proper Python package. Install it via pip:
 
 ```bash
-git clone https://github.com/yourusername/cpkb.git
+git clone https://github.com/Aaravshah2907/cpkb.git
 cd cpkb
 pip install -e .
 ```
+
+## Platform‑specific dependencies
+
+- **macOS**: `pbcopy` is built‑in. Install `fzf` via `brew install fzf`.
+- **Linux**: Install clipboard utilities (`xclip` or `xsel`) and `fzf` via your package manager, e.g. `sudo apt-get install xclip fzf`.
+- **Windows**: Clipboard support uses the built‑in `clip`. Install `fzf` via Scoop (`scoop install fzf`) or Chocolatey (`choco install fzf`).
 
 ## Usage
 
@@ -46,7 +52,7 @@ Here are the commands available in Version 2.0:
 ### New V2 Commands
 - `cpkb tui`: Launch the interactive Textual TUI (press `c` to copy a snippet).
 - `cpkb fzf`: Interactively fuzzy search snippets using `fzf`.
-- `cpkb copy <id> [-f <file>]`: Instantly copy the snippet's code to your clipboard (`pbcopy`), or append to a file.
+- `cpkb copy <id> [-f <file>]`: Instantly copy the snippet's code to your system clipboard (uses `pbcopy` on macOS, `xclip`/`xsel` on Linux, `clip` on Windows) or append to a file.
 - `cpkb revise`: Starts a spaced-repetition prompt testing you on random snippets.
 
 ## Directory Structure

@@ -29,14 +29,14 @@ class SnippetApp(App):
     """
     
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
-        Binding("r", "refresh", "Refresh List"),
-        Binding("c", "copy_snippet", "Copy Code"),
+        Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+r", "refresh", "Refresh List"),
+        Binding("ctrl+c", "copy_snippet", "Copy Code"),
         Binding("/", "focus_search", "Search"),
-        Binding("a", "add_snippet", "Add"),
-        Binding("e", "edit_snippet", "Edit"),
-        Binding("u", "use_snippet", "Use"),
-        Binding("d", "delete_snippet", "Delete"),
+        Binding("ctrl+a", "add_snippet", "Add"),
+        Binding("ctrl+e", "edit_snippet", "Edit"),
+        Binding("ctrl+u", "use_snippet", "Use"),
+        Binding("ctrl+d", "delete_snippet", "Delete"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -91,7 +91,6 @@ class SnippetApp(App):
 
     def action_copy_snippet(self) -> None:
         """Copy the code of the currently selected snippet to the clipboard."""
-        if isinstance(self.focused, Input): return
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
@@ -102,7 +101,6 @@ class SnippetApp(App):
                 self.notify(f"Code for {snippet_id} copied to clipboard!", title="Copied!")
 
     async def action_edit_snippet(self) -> None:
-        if isinstance(self.focused, Input): return
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
@@ -116,7 +114,6 @@ class SnippetApp(App):
             self.notify(f"Snippet {snippet_id} updated.")
 
     async def action_delete_snippet(self) -> None:
-        if isinstance(self.focused, Input): return
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
@@ -129,7 +126,6 @@ class SnippetApp(App):
             await self.action_refresh()
 
     async def action_add_snippet(self) -> None:
-        if isinstance(self.focused, Input): return
         
         with self.suspend():
             from .cli import cmd_add
@@ -140,7 +136,6 @@ class SnippetApp(App):
         self.notify("Added new snippet!")
 
     async def action_use_snippet(self) -> None:
-        if isinstance(self.focused, Input): return
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")

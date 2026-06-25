@@ -10,6 +10,29 @@ import sys
 import os
 import tempfile
 import subprocess
+import platform
+
+def _copy_to_clipboard(text: str) -> None:
+    """Copy *text* to the system clipboard in a cross‑platform way.
+
+    Uses ``pbcopy`` on macOS, ``xclip``/``xsel`` on Linux, and ``clip`` on Windows.
+    Raises ``RuntimeError`` if no suitable tool is found.
+    """
+    system = platform.system().lower()
+    if system == "darwin":
+        subprocess.run(["pbcopy"], input=text.encode())
+    elif system == "linux":
+        for cmd in (["xclip", "-selection", "clipboard"], ["xsel", "--clipboard"]):
+            try:
+                subprocess.run(cmd, input=text.encode(), check=True)
+                return
+            except FileNotFoundError:
+                continue
+        raise RuntimeError("Neither xclip nor xsel is installed; cannot copy to clipboard.")
+    elif system == "windows":
+        subprocess.run(["clip"], input=text.encode())
+    else:
+        raise RuntimeError(f"Unsupported OS: {system}")
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -545,11 +568,10 @@ def cmd_copy(args: argparse.Namespace) -> None:
         print(f"Snippet {args.id} appended to {args.file}")
     else:
         try:
-            p = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE, text=True)
-            p.communicate(input=row[0])
+            _copy_to_clipboard(row[0])
             print(f"Snippet {args.id} copied to clipboard!")
-        except FileNotFoundError:
-            print("pbcopy not found, here is the code:\n")
+        except Exception as e:
+            print(f"Clipboard copy failed ({e}); here is the code:\n")
             print(row[0])
 
 def cmd_revise(args: argparse.Namespace) -> None:
