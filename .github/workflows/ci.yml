@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-22.04, macos-13, windows-2022]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,6 +33,8 @@ jobs:
 
       - name: Install OS‑specific tools (macOS)
         if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
         run: brew install fzf
 
       - name: Install OS‑specific tools (Windows)
