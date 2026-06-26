@@ -11,6 +11,7 @@ import tempfile
 import subprocess
 import platform
 import random as rnd
+import shutil
 
 from .db import (
     init_db, backup_db, generate_id, update_tags,
@@ -772,6 +773,47 @@ def cmd_export_html(args: argparse.Namespace) -> None:
     print(f"Exported {len(rows)} snippets to {out_path}")
 
 
+def cmd_export_db(args: argparse.Namespace) -> None:
+    """Export the SQLite database, optionally encrypted with a password."""
+    from datetime import datetime, timezone
+
+    init_db()
+    if not DB_PATH.exists():
+        print("No database to export.", file=sys.stderr)
+        return
+
+    export_dir = APP_DIR / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    if args.encrypted:
+        import getpass
+        from cryptography.fernet import Fernet
+
+        password = getpass.getpass("Enter export encryption password: ")
+        if not password:
+            print("Error: Password cannot be empty.", file=sys.stderr)
+            return
+        confirm = getpass.getpass("Confirm password: ")
+        if password != confirm:
+            print("Error: Passwords do not match.", file=sys.stderr)
+            return
+
+        salt = os.urandom(16)
+        key = _derive_fernet_key(password, salt)
+        with open(DB_PATH, "rb") as fdb:
+            data = fdb.read()
+
+        out_path = export_dir / f"snippets_{timestamp}.db.enc"
+        with open(out_path, "wb") as fe:
+            fe.write(salt + Fernet(key).encrypt(data))
+    else:
+        out_path = export_dir / f"snippets_{timestamp}.db"
+        shutil.copy2(DB_PATH, out_path)
+
+    print(f"Exported database to {out_path}")
+
+
 # ---------------------------------------------------------------------------
 # TUI / FZF / Copy
 # ---------------------------------------------------------------------------
@@ -903,6 +945,9 @@ def main() -> None:
     parser_export_json.set_defaults(func=cmd_export_json)
     parser_export_html = subparsers.add_parser("export-html", help="Export snippets to HTML")
     parser_export_html.set_defaults(func=cmd_export_html)
+    parser_export_db = subparsers.add_parser("export-db", help="Export the SQLite database")
+    parser_export_db.add_argument("--encrypted", action="store_true", help="Encrypt exported DB with a password")
+    parser_export_db.set_defaults(func=cmd_export_db)
 
     parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
     parser_backup.set_defaults(func=cmd_backup)

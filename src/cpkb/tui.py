@@ -185,8 +185,8 @@ class EditTagsModal(ModalScreen[dict]):
     }
     #tags-dialog {
         padding: 1 2;
-        width: 45;
-        height: 14;
+        width: 60;
+        height: 16;
         border: thick $background 80%;
         background: $surface;
     }
@@ -194,25 +194,31 @@ class EditTagsModal(ModalScreen[dict]):
         margin-top: 1;
     }
     """
+
+    def __init__(self, current_tags: str = "") -> None:
+        super().__init__()
+        self._current_tags = current_tags
+
     def compose(self) -> ComposeResult:
         with Vertical(id="tags-dialog"):
             yield Label("🏷  Edit Tags")
-            yield Label("Action:")
-            yield Input(placeholder="add or remove", id="action-input")
+            yield Label("Current Tags:")
+            yield Input(value=self._current_tags, id="current-tags-input", disabled=True)
             yield Label("Tag:")
-            yield Input(id="tag-input")
+            yield Input(placeholder="tag name", id="tag-input")
             with Horizontal():
-                yield Button("Save", variant="success", id="save-btn")
+                yield Button("Add", variant="success", id="add-btn")
+                yield Button("Remove", variant="warning", id="remove-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "save-btn":
-            action = self.query_one("#action-input", Input).value.strip().lower()
+        if event.button.id in {"add-btn", "remove-btn"}:
             tag = self.query_one("#tag-input", Input).value.strip()
-            if action in ('a', 'add', 'r', 'remove') and tag:
-                self.dismiss({"action": "add" if action.startswith('a') else "remove", "tag": tag})
+            if tag:
+                action = "add" if event.button.id == "add-btn" else "remove"
+                self.dismiss({"action": action, "tag": tag})
             else:
-                self.notify("Enter a valid action (add/remove) and tag", severity="error")
+                self.notify("Enter a tag first", severity="error")
         else:
             self.dismiss(None)
 
@@ -290,6 +296,10 @@ class SnippetApp(App):
         Binding("ctrl+u", "use_snippet", "Use"),
         Binding("ctrl+d", "delete_snippet", "Delete"),
         Binding("ctrl+t", "edit_tags", "Edit Tags"),
+        Binding("j", "scroll_detail_down", "Detail Down", show=False),
+        Binding("k", "scroll_detail_up", "Detail Up", show=False),
+        Binding("pagedown", "page_detail_down", "Detail Page Down", show=False),
+        Binding("pageup", "page_detail_up", "Detail Page Up", show=False),
         Binding("left_square_bracket", "shrink_left", "Shrink Left", show=False),
         Binding("right_square_bracket", "grow_left", "Grow Left", show=False),
     ]
@@ -319,6 +329,22 @@ class SnippetApp(App):
     def action_grow_left(self) -> None:
         """Grow the left pane by 5%."""
         self.left_pane_width = min(70, self.left_pane_width + 5)
+
+    def action_scroll_detail_down(self) -> None:
+        """Scroll the snippet detail pane down."""
+        self.query_one("#snippet-view", Markdown).scroll_down(animate=False)
+
+    def action_scroll_detail_up(self) -> None:
+        """Scroll the snippet detail pane up."""
+        self.query_one("#snippet-view", Markdown).scroll_up(animate=False)
+
+    def action_page_detail_down(self) -> None:
+        """Page the snippet detail pane down."""
+        self.query_one("#snippet-view", Markdown).scroll_page_down(animate=False)
+
+    def action_page_detail_up(self) -> None:
+        """Page the snippet detail pane up."""
+        self.query_one("#snippet-view", Markdown).scroll_page_up(animate=False)
 
     async def on_mount(self) -> None:
         self.conn = init_db()
@@ -427,6 +453,8 @@ class SnippetApp(App):
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
             snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            row = get_snippet_fields(self.cursor, snippet_id, "tags")
+            current_tags = row[0] if row and row[0] else ""
 
             def check_result(result: dict | None) -> None:
                 if result:
@@ -440,7 +468,7 @@ class SnippetApp(App):
                     except ValueError as e:
                         self.notify(str(e), severity="error")
 
-            self.push_screen(EditTagsModal(), check_result)
+            self.push_screen(EditTagsModal(current_tags), check_result)
 
     # ------------------------------------------------------------------
     # Add (native modal)

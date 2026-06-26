@@ -252,6 +252,51 @@ def test_init_db_migrates_legacy_database(capsys):
     temp_dir.cleanup()
 
 
+def test_cmd_export_db_copies_sqlite_database(temp_db, capsys):
+    """Test exporting the database as a .db file."""
+    args_add = MagicMock()
+    with patch("builtins.input", side_effect=["Exported", "Desc", "Use", "tag"]), \
+         patch("sys.stdin.readlines", return_value=["code"]):
+        cli.cmd_add(args_add)
+
+    args = MagicMock()
+    args.encrypted = False
+    cli.cmd_export_db(args)
+
+    captured = capsys.readouterr()
+    assert "Exported database to" in captured.out
+
+    exports = list((db.APP_DIR / "exports").glob("snippets_*.db"))
+    assert len(exports) == 1
+
+    exported_conn = sqlite3.connect(exports[0])
+    row = exported_conn.execute("SELECT title FROM snippets").fetchone()
+    exported_conn.close()
+    assert row == ("Exported",)
+
+
+def test_cmd_export_db_can_encrypt(temp_db, capsys):
+    """Test encrypted DB export writes salt plus Fernet ciphertext."""
+    args_add = MagicMock()
+    with patch("builtins.input", side_effect=["Secret", "Desc", "Use", "tag"]), \
+         patch("sys.stdin.readlines", return_value=["code"]):
+        cli.cmd_add(args_add)
+
+    args = MagicMock()
+    args.encrypted = True
+    with patch("getpass.getpass", side_effect=["pw", "pw"]):
+        cli.cmd_export_db(args)
+
+    captured = capsys.readouterr()
+    assert "Exported database to" in captured.out
+
+    exports = list((db.APP_DIR / "exports").glob("snippets_*.db.enc"))
+    assert len(exports) == 1
+    raw = exports[0].read_bytes()
+    assert len(raw) > 16
+    assert raw[:16] != raw[16:32]
+
+
 def test_cmd_tag_add_remove(temp_db, capsys):
     """Test adding and removing tags via CLI commands."""
     args_add = MagicMock()

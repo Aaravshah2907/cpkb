@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 import tempfile
 from pathlib import Path
-from cpkb.tui import SnippetApp
+from cpkb.tui import EditTagsModal, SnippetApp
 from cpkb import db
 
 
@@ -38,3 +38,28 @@ async def test_tui_search_input(mock_db):
         await pilot.press("t", "e", "s", "t")
         await pilot.pause()
         assert True
+
+
+@pytest.mark.asyncio
+async def test_tui_detail_scroll_bindings_exist(mock_db):
+    """Verify detail-pane keyboard scrolling actions are registered."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert callable(app.action_scroll_detail_down)
+        assert callable(app.action_scroll_detail_up)
+        assert callable(app.action_page_detail_down)
+        assert callable(app.action_page_detail_up)
+
+
+@pytest.mark.asyncio
+async def test_edit_tags_modal_shows_current_tags(mock_db):
+    """Verify the tag editor shows current tags and add/remove controls."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        modal = EditTagsModal("graph, dp")
+        app.push_screen(modal)
+        await pilot.pause()
+        assert modal.query_one("#current-tags-input").value == "graph, dp"
+        assert modal.query_one("#add-btn") is not None
+        assert modal.query_one("#remove-btn") is not None
