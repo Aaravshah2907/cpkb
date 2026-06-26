@@ -205,6 +205,53 @@ def test_backup_retention_uses_config(temp_db):
     assert len(backups) == 2
 
 
+def test_init_db_migrates_legacy_database(capsys):
+    """Test legacy databases are backed up and migrated to the current schema."""
+    temp_dir = tempfile.TemporaryDirectory()
+    temp_path = Path(temp_dir.name) / "test.db"
+    app_dir = Path(temp_dir.name)
+    app_dir.mkdir(exist_ok=True)
+
+    legacy_conn = sqlite3.connect(temp_path)
+    legacy_conn.execute('''
+        CREATE TABLE snippets (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            use_case TEXT,
+            tags TEXT,
+            code TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    legacy_conn.execute('''
+        INSERT INTO snippets
+        VALUES ('CP0001', 'Legacy', 'desc', 'use', 'Graph, DP', 'code', 'old', 'old')
+    ''')
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    with patch.object(db, "DB_PATH", temp_path), \
+         patch.object(db, "APP_DIR", app_dir):
+        conn = db.init_db()
+        cursor = conn.cursor()
+
+        assert db.get_schema_version(cursor) == db.CURRENT_SCHEMA_VERSION
+        cursor.execute("SELECT tag FROM tags WHERE snippet_id = ? ORDER BY tag", ("CP0001",))
+        assert cursor.fetchall() == [("dp",), ("graph",)]
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='reviews'")
+        assert cursor.fetchone() is not None
+        conn.close()
+
+        backups = list((app_dir / "backups").glob("snippets_pre_migration_*.db"))
+        assert len(backups) == 1
+
+    captured = capsys.readouterr()
+    assert "Migration complete" in captured.out
+    temp_dir.cleanup()
+
+
 def test_cmd_tag_add_remove(temp_db, capsys):
     """Test adding and removing tags via CLI commands."""
     args_add = MagicMock()

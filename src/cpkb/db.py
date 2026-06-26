@@ -16,6 +16,7 @@ XDG_DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "s
 APP_DIR = XDG_DATA_HOME / "cpkb"
 DB_PATH = APP_DIR / "snippets.db"
 KEY_PATH = APP_DIR / "encryption.key"
+CURRENT_SCHEMA_VERSION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -29,29 +30,49 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
-def init_db() -> sqlite3.Connection:
-    """Initialize the directory structure and database schema.
+def _table_exists(cursor: sqlite3.Cursor, table_name: str) -> bool:
+    """Return whether *table_name* exists in the current database."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+    return cursor.fetchone() is not None
 
-    Creates all required application directories and database tables.
-    Performs automatic migration for the ``tags`` table when upgrading
-    from older schema versions.
-    """
-    APP_DIR.mkdir(parents=True, exist_ok=True)
-    for sub in ("backups", "exports", "imports", "logs", "attachments"):
-        (APP_DIR / sub).mkdir(exist_ok=True)
-    save_config(APP_DIR, load_config(APP_DIR))
 
-    db_exists = DB_PATH.exists()
-    conn = get_conn()
-    cursor = conn.cursor()
+def get_schema_version(cursor: sqlite3.Cursor) -> int:
+    """Return the stored schema version, inferring legacy versions when absent."""
+    if _table_exists(cursor, "schema_meta"):
+        cursor.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'")
+        row = cursor.fetchone()
+        if row and str(row[0]).isdigit():
+            return int(row[0])
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tags'")
-    tags_exists = cursor.fetchone() is not None
+    if not _table_exists(cursor, "snippets"):
+        return CURRENT_SCHEMA_VERSION
+    if _table_exists(cursor, "reviews"):
+        return CURRENT_SCHEMA_VERSION
+    if _table_exists(cursor, "tags"):
+        return 1
+    return 0
 
-    if db_exists and not tags_exists:
-        print("Migrating database... Creating backup first.")
-        backup_db("pre_migration")
 
+def set_schema_version(cursor: sqlite3.Cursor, version: int) -> None:
+    """Persist the database schema version."""
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS schema_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    cursor.execute('''
+        INSERT INTO schema_meta (key, value, updated_at)
+        VALUES ('schema_version', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at
+    ''', (str(version), _now()))
+
+
+def _create_schema(cursor: sqlite3.Cursor) -> None:
+    """Create all current-version tables if they do not exist."""
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS snippets (
             id TEXT PRIMARY KEY,
@@ -98,15 +119,74 @@ def init_db() -> sqlite3.Connection:
         )
     ''')
 
-    if db_exists and not tags_exists:
-        cursor.execute("SELECT id, tags FROM snippets")
-        for snip_id, tags_str in cursor.fetchall():
-            if tags_str:
-                for tag in [t.strip().lower() for t in tags_str.split(',') if t.strip()]:
-                    cursor.execute("INSERT INTO tags (snippet_id, tag) VALUES (?, ?)", (snip_id, tag))
-        print("Migration complete: populated tags table.")
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS schema_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
 
+
+def _populate_tags_from_snippets(cursor: sqlite3.Cursor) -> None:
+    """Populate normalized tag rows from the legacy snippets.tags column."""
+    cursor.execute("SELECT id, tags FROM snippets")
+    for snip_id, tags_str in cursor.fetchall():
+        if tags_str:
+            for tag in [t.strip().lower() for t in tags_str.split(',') if t.strip()]:
+                cursor.execute(
+                    "INSERT INTO tags (snippet_id, tag) VALUES (?, ?)",
+                    (snip_id, tag),
+                )
+
+
+def migrate_db(cursor: sqlite3.Cursor, conn: sqlite3.Connection, db_existed: bool) -> None:
+    """Safely migrate old databases to the current schema version."""
+    old_version = get_schema_version(cursor)
+    if old_version > CURRENT_SCHEMA_VERSION:
+        print(
+            f"Warning: database schema version {old_version} is newer than this CPKB "
+            f"supports ({CURRENT_SCHEMA_VERSION}). Please upgrade CPKB as soon as possible.",
+        )
+        return
+
+    if db_existed and old_version < CURRENT_SCHEMA_VERSION:
+        print(
+            f"Database schema v{old_version} detected. Creating backup before "
+            f"migrating to v{CURRENT_SCHEMA_VERSION}."
+        )
+        backup_db("pre_migration")
+
+    had_tags = _table_exists(cursor, "tags")
+    _create_schema(cursor)
+
+    if old_version < 1 and not had_tags:
+        _populate_tags_from_snippets(cursor)
+
+    set_schema_version(cursor, CURRENT_SCHEMA_VERSION)
     conn.commit()
+
+    if db_existed and old_version < CURRENT_SCHEMA_VERSION:
+        print(f"Migration complete: schema v{old_version} -> v{CURRENT_SCHEMA_VERSION}.")
+
+
+def init_db() -> sqlite3.Connection:
+    """Initialize the directory structure and database schema.
+
+    Creates all required application directories and database tables.
+    Performs automatic migration for the ``tags`` table when upgrading
+    from older schema versions.
+    """
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    for sub in ("backups", "exports", "imports", "logs", "attachments"):
+        (APP_DIR / sub).mkdir(exist_ok=True)
+    save_config(APP_DIR, load_config(APP_DIR))
+
+    db_exists = DB_PATH.exists()
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    migrate_db(cursor, conn, db_exists)
     return conn
 
 
