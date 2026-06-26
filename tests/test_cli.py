@@ -2,9 +2,11 @@ import pytest
 from unittest.mock import patch, MagicMock
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 from cpkb import cli
 from cpkb import db
+from cpkb import config as cpkb_config
 
 
 @pytest.fixture
@@ -158,6 +160,49 @@ def test_cmd_stats(temp_db, capsys):
     captured = capsys.readouterr()
     assert "Total Snippets: 1" in captured.out
     assert "Unique Tags:    2" in captured.out
+
+
+def test_cmd_config_creates_default_config(temp_db, capsys):
+    """Test that cmd_config prints and persists default config."""
+    cli.cmd_config(MagicMock())
+    captured = capsys.readouterr()
+    assert "config.json" in captured.out
+    assert '"default_language": "cpp"' in captured.out
+    assert (db.APP_DIR / "config.json").exists()
+
+
+def test_generate_id_respects_configured_max_snippets(temp_db):
+    """Test ID width and limit derive from config."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {"max_number": 99},
+            "backups": {"max_backups": 25},
+        },
+    )
+    cursor = temp_db.cursor()
+    sid = db.add_snippet(cursor, temp_db, "Repo Test", "desc", "use", "t1", "code")
+    assert sid == "CP01"
+
+
+def test_backup_retention_uses_config(temp_db):
+    """Test backup pruning keeps only the configured number of backups."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {"max_number": 9999},
+            "backups": {"max_backups": 2},
+        },
+    )
+    cursor = temp_db.cursor()
+    db.add_snippet(cursor, temp_db, "Repo Test", "desc", "use", "t1", "code")
+
+    for index in range(3):
+        db.backup_db(f"manual_{index}")
+        time.sleep(0.01)
+
+    backups = sorted((db.APP_DIR / "backups").glob("snippets_*.db"))
+    assert len(backups) == 2
 
 
 def test_cmd_tag_add_remove(temp_db, capsys):

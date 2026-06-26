@@ -22,6 +22,7 @@ from .db import (
     get_due_snippet, get_unreviewed_snippet, upsert_review, get_srs_stats,
     APP_DIR, DB_PATH, KEY_PATH,
 )
+from .config import load_config, save_config
 
 
 def _copy_to_clipboard(text: str) -> None:
@@ -59,6 +60,16 @@ def cmd_backup(args: argparse.Namespace) -> None:
         print(f"Database backed up successfully to: {path}")
     else:
         print("No database found to backup.", file=sys.stderr)
+
+
+def cmd_config(args: argparse.Namespace) -> None:
+    """Print the active CPKB configuration path and values."""
+    init_db()
+    import json
+
+    path = save_config(APP_DIR, load_config(APP_DIR))
+    print(f"Config: {path}")
+    print(json.dumps(load_config(APP_DIR), indent=2))
 
 
 # ---------------------------------------------------------------------------
@@ -895,6 +906,9 @@ def main() -> None:
 
     parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
     parser_backup.set_defaults(func=cmd_backup)
+
+    parser_config = subparsers.add_parser("config", help="Show active configuration")
+    parser_config.set_defaults(func=cmd_config)
 
     parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database with a password")
     parser_encrypt.set_defaults(func=cmd_encrypt_db)

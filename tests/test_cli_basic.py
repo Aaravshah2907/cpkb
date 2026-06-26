@@ -16,6 +16,13 @@ def test_import_cpkb_db():
     assert hasattr(module, 'get_snippet')
 
 
+def test_import_cpkb_config():
+    """Ensure the CPKB config module can be imported."""
+    module = importlib.import_module('cpkb.config')
+    assert hasattr(module, 'load_config')
+    assert hasattr(module, 'save_config')
+
+
 def test_python_version():
     """Confirm the test environment runs on Python 3.11+ as required."""
     major, minor = sys.version_info[:2]

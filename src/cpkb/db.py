@@ -9,6 +9,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 import os
 
+from .config import load_config, max_backups, max_snippets, save_config
+
 # XDG Base Directory specification
 XDG_DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
 APP_DIR = XDG_DATA_HOME / "cpkb"
@@ -37,6 +39,7 @@ def init_db() -> sqlite3.Connection:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     for sub in ("backups", "exports", "imports", "logs", "attachments"):
         (APP_DIR / sub).mkdir(exist_ok=True)
+    save_config(APP_DIR, load_config(APP_DIR))
 
     db_exists = DB_PATH.exists()
     conn = get_conn()
@@ -118,18 +121,19 @@ def _now() -> str:
 
 def generate_id(cursor: sqlite3.Cursor) -> str:
     """Generate the next snippet ID (e.g., CP0001)."""
-    cursor.execute("SELECT id FROM snippets ORDER BY id DESC LIMIT 1")
-    row = cursor.fetchone()
-    if not row:
-        return "CP0001"
+    width = len(str(max_snippets(APP_DIR)))
+    cursor.execute("SELECT id FROM snippets WHERE id GLOB 'CP[0-9]*'")
+    existing = []
+    for (snippet_id,) in cursor.fetchall():
+        suffix = snippet_id[2:]
+        if suffix.isdigit():
+            existing.append(int(suffix))
 
-    last_id = row[0]
-    if last_id.startswith("CP") and last_id[2:].isdigit():
-        num = int(last_id[2:])
-        return f"CP{num + 1:04d}"
-
-    cursor.execute("SELECT COUNT(*) FROM snippets")
-    return f"CP{cursor.fetchone()[0] + 1:04d}"
+    next_num = max(existing, default=0) + 1
+    limit = max_snippets(APP_DIR)
+    if next_num > limit:
+        raise ValueError(f"Maximum snippet count reached ({limit}). Update config.json to increase it.")
+    return f"CP{next_num:0{width}d}"
 
 
 # ---------------------------------------------------------------------------
@@ -508,4 +512,19 @@ def backup_db(prefix: str = "manual") -> str:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     backup_path = backups_dir / f"snippets_{prefix}_{timestamp}.db"
     shutil.copy2(DB_PATH, backup_path)
+    prune_backups()
     return str(backup_path)
+
+
+def prune_backups() -> None:
+    """Delete oldest backups when configured retention is exceeded."""
+    limit = max_backups(APP_DIR)
+    backups_dir = APP_DIR / "backups"
+    if limit <= 0:
+        backups = sorted(backups_dir.glob("snippets_*.db"), key=lambda p: p.stat().st_mtime)
+    else:
+        backups = sorted(backups_dir.glob("snippets_*.db"), key=lambda p: p.stat().st_mtime)
+        backups = backups[:-limit]
+
+    for backup in backups:
+        backup.unlink(missing_ok=True)
