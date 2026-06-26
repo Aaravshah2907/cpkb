@@ -70,6 +70,10 @@ Here are the commands available in Version 2.0:
 - `cpkb delete <id>`: Delete a snippet permanently.
 - `cpkb recent`: Show the 10 most recently added snippets.
 - `cpkb export`: Export your entire knowledge base to a single Markdown file.
+- `cpkb export-db [--encrypted]`: Export your SQLite database, optionally encrypted with a password.
+- `cpkb import <file-or-url>`: Append snippets from a CPKB `db`, `json`, `md`, or `html` export.
+- `cpkb import --defaults`: Import bundled C++ STL competitive-programming cheatsheets with special `cp_` IDs.
+- `cpkb import --list-defaults`: Preview the bundled cheatsheets before importing.
 - `cpkb backup`: Manually trigger a backup of the SQLite database.
 
 ### New V2 Commands

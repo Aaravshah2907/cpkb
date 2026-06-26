@@ -247,6 +247,73 @@ def add_snippet(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
     return snippet_id
 
 
+def insert_snippet_with_id(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
+                           snippet_id: str, title: str, description: str,
+                           use_case: str, tags: str, code: str,
+                           created_at: str | None = None,
+                           updated_at: str | None = None) -> str:
+    """Insert a snippet with a caller-provided ID and return the inserted ID."""
+    now = _now()
+    cursor.execute('''
+        INSERT INTO snippets (id, title, description, use_case, tags, code, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        snippet_id, title, description, use_case, tags, code,
+        created_at or now, updated_at or now,
+    ))
+    update_tags(cursor, snippet_id, tags)
+    conn.commit()
+    return snippet_id
+
+
+def import_snippets(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
+                    snippets: list[dict], preserve_ids: bool = True) -> dict:
+    """Append snippet dictionaries into the current DB without overwriting rows.
+
+    If ``preserve_ids`` is true, incoming IDs are kept when they do not already
+    exist. Missing IDs or collisions receive normal generated ``CP`` IDs.
+    Returns counts and an ID mapping from source IDs to inserted IDs.
+    """
+    imported = 0
+    skipped = 0
+    id_map = {}
+
+    for snippet in snippets:
+        title = (snippet.get("title") or "").strip()
+        code = (snippet.get("code") or "").strip()
+        if not title or not code:
+            skipped += 1
+            continue
+
+        source_id = (snippet.get("id") or "").strip()
+        target_id = ""
+        if preserve_ids and source_id:
+            cursor.execute("SELECT 1 FROM snippets WHERE id = ?", (source_id,))
+            if cursor.fetchone() is None:
+                target_id = source_id
+
+        if not target_id:
+            target_id = generate_id(cursor)
+
+        insert_snippet_with_id(
+            cursor,
+            conn,
+            target_id,
+            title,
+            snippet.get("description") or "",
+            snippet.get("use_case") or "",
+            snippet.get("tags") or "",
+            code,
+            snippet.get("created_at"),
+            snippet.get("updated_at"),
+        )
+        imported += 1
+        if source_id:
+            id_map[source_id] = target_id
+
+    return {"imported": imported, "skipped": skipped, "id_map": id_map}
+
+
 def get_snippet(cursor: sqlite3.Cursor, snippet_id: str) -> tuple | None:
     """Return the full snippet row or ``None``."""
     cursor.execute("SELECT * FROM snippets WHERE id = ?", (snippet_id,))

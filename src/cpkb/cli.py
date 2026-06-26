@@ -12,10 +12,15 @@ import subprocess
 import platform
 import random as rnd
 import shutil
+import sqlite3
+from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 from .db import (
     init_db, backup_db, generate_id, update_tags,
     add_snippet, get_snippet, get_snippet_fields, update_snippet,
+    import_snippets,
     delete_snippet, list_snippets, recent_snippets, search_snippets,
     search_snippets_full,
     add_usage, get_usages, get_usage, update_usage,
@@ -24,6 +29,7 @@ from .db import (
     APP_DIR, DB_PATH, KEY_PATH,
 )
 from .config import load_config, save_config
+from .default_snippets import default_snippets
 
 
 def _copy_to_clipboard(text: str) -> None:
@@ -815,6 +821,178 @@ def cmd_export_db(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Import Commands
+# ---------------------------------------------------------------------------
+
+def _snippet_dict_from_row(row: tuple) -> dict:
+    return {
+        "id": row[0],
+        "title": row[1],
+        "description": row[2] or "",
+        "use_case": row[3] or "",
+        "tags": row[4] or "",
+        "code": row[5],
+        "created_at": row[6],
+        "updated_at": row[7],
+    }
+
+
+def _read_source(source: str) -> tuple[bytes, str]:
+    parsed = urlparse(source)
+    if parsed.scheme in {"http", "https"}:
+        with urlopen(source, timeout=20) as response:
+            return response.read(), Path(parsed.path).name
+    path = Path(source)
+    return path.read_bytes(), path.name
+
+
+def _decrypt_export(raw: bytes, password: str) -> bytes:
+    from cryptography.fernet import Fernet
+
+    salt = raw[:16]
+    encrypted = raw[16:]
+    key = _derive_fernet_key(password, salt)
+    return Fernet(key).decrypt(encrypted)
+
+
+def _load_json_snippets(raw: bytes) -> list[dict]:
+    import json
+
+    data = json.loads(raw.decode("utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("JSON import must contain a list of snippets.")
+    return [item for item in data if isinstance(item, dict)]
+
+
+def _load_db_snippets(raw: bytes) -> list[dict]:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+        tf.write(raw)
+        temp_path = tf.name
+
+    try:
+        conn = sqlite3.connect(temp_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM snippets ORDER BY created_at")
+        rows = cursor.fetchall()
+        conn.close()
+    finally:
+        os.remove(temp_path)
+
+    return [_snippet_dict_from_row(row) for row in rows]
+
+
+def _load_markdown_snippets(raw: bytes) -> list[dict]:
+    import re
+
+    text = raw.decode("utf-8")
+    pattern = re.compile(
+        r"^## (?P<title>.+?) \((?P<id>[^)]+)\)\n"
+        r"\*\*Description:\*\* (?P<description>.*?)\n"
+        r"\*\*Use case:\*\* (?P<use_case>.*?)\n"
+        r"\*\*Tags:\*\* (?P<tags>.*?)\n\n"
+        r"```\n(?P<code>.*?)\n```\n?",
+        re.MULTILINE | re.DOTALL,
+    )
+    return [match.groupdict() for match in pattern.finditer(text)]
+
+
+def _load_html_snippets(raw: bytes) -> list[dict]:
+    import html
+    import re
+
+    text = raw.decode("utf-8")
+    section_pattern = re.compile(r"<section>(?P<section>.*?)</section>", re.DOTALL)
+    snippets = []
+    for section_match in section_pattern.finditer(text):
+        section = section_match.group("section")
+        title_match = re.search(r"<h2>(?P<title>.*?) \((?P<id>.*?)\)</h2>", section, re.DOTALL)
+        desc_match = re.search(r"<p><strong>Description:</strong> (?P<value>.*?)</p>", section, re.DOTALL)
+        use_match = re.search(r"<p><strong>Use case:</strong> (?P<value>.*?)</p>", section, re.DOTALL)
+        tags_match = re.search(r"<p><strong>Tags:</strong> (?P<value>.*?)</p>", section, re.DOTALL)
+        code_match = re.search(r"<pre>(?P<code>.*?)</pre>", section, re.DOTALL)
+        if not title_match or not code_match:
+            continue
+        snippets.append(
+            {
+                "id": html.unescape(title_match.group("id").strip()),
+                "title": html.unescape(title_match.group("title").strip()),
+                "description": html.unescape(desc_match.group("value").strip()) if desc_match else "",
+                "use_case": html.unescape(use_match.group("value").strip()) if use_match else "",
+                "tags": html.unescape(tags_match.group("value").strip()) if tags_match else "",
+                "code": html.unescape(code_match.group("code").strip()),
+            }
+        )
+    return snippets
+
+
+def _detect_import_format(source_name: str, explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    lowered = source_name.lower()
+    if lowered.endswith(".db.enc"):
+        return "db"
+    if lowered.endswith(".db"):
+        return "db"
+    if lowered.endswith(".json"):
+        return "json"
+    if lowered.endswith(".md") or lowered.endswith(".markdown"):
+        return "md"
+    if lowered.endswith(".html") or lowered.endswith(".htm"):
+        return "html"
+    raise ValueError("Could not detect import format. Use --format db|json|md|html.")
+
+
+def _load_import_snippets(source: str, fmt: str | None, encrypted: bool) -> list[dict]:
+    import getpass
+
+    raw, source_name = _read_source(source)
+    if encrypted or source_name.lower().endswith(".enc"):
+        password = getpass.getpass("Enter import decryption password: ")
+        raw = _decrypt_export(raw, password)
+
+    detected = _detect_import_format(source_name.removesuffix(".enc"), fmt)
+    if detected == "db":
+        return _load_db_snippets(raw)
+    if detected == "json":
+        return _load_json_snippets(raw)
+    if detected == "md":
+        return _load_markdown_snippets(raw)
+    if detected == "html":
+        return _load_html_snippets(raw)
+    raise ValueError(f"Unsupported import format: {detected}")
+
+
+def cmd_import(args: argparse.Namespace) -> None:
+    """Append snippets from a CPKB export or bundled defaults."""
+    if args.list_defaults:
+        snippets = default_snippets(APP_DIR)
+        for snippet in snippets:
+            print(f"{snippet['id']} | {snippet['title']}")
+        return
+
+    conn = init_db()
+    cursor = conn.cursor()
+
+    if args.defaults:
+        snippets = default_snippets(APP_DIR)
+    else:
+        if not args.source:
+            print("Import failed: provide a source path/URL or use --defaults.", file=sys.stderr)
+            return
+        try:
+            snippets = _load_import_snippets(args.source, args.format, args.encrypted)
+        except Exception as exc:
+            print(f"Import failed: {exc}", file=sys.stderr)
+            return
+
+    result = import_snippets(cursor, conn, snippets, preserve_ids=not args.regenerate_ids)
+    print(f"Imported {result['imported']} snippet(s); skipped {result['skipped']}.")
+    collisions = sum(1 for old, new in result["id_map"].items() if old != new)
+    if collisions:
+        print(f"Regenerated {collisions} colliding ID(s).")
+
+
+# ---------------------------------------------------------------------------
 # TUI / FZF / Copy
 # ---------------------------------------------------------------------------
 
@@ -948,6 +1126,15 @@ def main() -> None:
     parser_export_db = subparsers.add_parser("export-db", help="Export the SQLite database")
     parser_export_db.add_argument("--encrypted", action="store_true", help="Encrypt exported DB with a password")
     parser_export_db.set_defaults(func=cmd_export_db)
+
+    parser_import = subparsers.add_parser("import", help="Import snippets from a CPKB export")
+    parser_import.add_argument("source", nargs="?", help="Path or URL to a CPKB db/json/md/html export")
+    parser_import.add_argument("--format", choices=["db", "json", "md", "html"], help="Import format")
+    parser_import.add_argument("--encrypted", action="store_true", help="Decrypt source before importing")
+    parser_import.add_argument("--defaults", action="store_true", help="Import bundled C++ STL cheatsheets")
+    parser_import.add_argument("--list-defaults", action="store_true", help="Preview bundled cheatsheets")
+    parser_import.add_argument("--regenerate-ids", action="store_true", help="Generate new CP IDs instead of preserving source IDs")
+    parser_import.set_defaults(func=cmd_import)
 
     parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
     parser_backup.set_defaults(func=cmd_backup)

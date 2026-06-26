@@ -7,6 +7,7 @@ from pathlib import Path
 from cpkb import cli
 from cpkb import db
 from cpkb import config as cpkb_config
+from cpkb.default_snippets import default_snippets
 
 
 @pytest.fixture
@@ -295,6 +296,123 @@ def test_cmd_export_db_can_encrypt(temp_db, capsys):
     raw = exports[0].read_bytes()
     assert len(raw) > 16
     assert raw[:16] != raw[16:32]
+
+
+def test_cmd_import_defaults_adds_cpp_cheatsheets(temp_db, capsys):
+    """Test bundled C++ cheatsheets import with special IDs."""
+    args = MagicMock()
+    args.list_defaults = False
+    args.defaults = True
+    args.source = None
+    args.format = None
+    args.encrypted = False
+    args.regenerate_ids = False
+
+    cli.cmd_import(args)
+
+    captured = capsys.readouterr()
+    assert "Imported 16 snippet(s)" in captured.out
+
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT id, title, tags, code FROM snippets WHERE id = ?", ("cp_0001",))
+    row = cursor.fetchone()
+    assert row is not None
+    assert row[1] == "Vector Method Info"
+    assert row[2] == "cheat sheet, helpful"
+    assert "push_back()" in row[3]
+
+
+def test_cmd_import_list_defaults_previews_without_importing(temp_db, capsys):
+    """Test default cheatsheet preview does not write snippets."""
+    args = MagicMock()
+    args.list_defaults = True
+
+    cli.cmd_import(args)
+
+    captured = capsys.readouterr()
+    assert "cp_0001 | Vector Method Info" in captured.out
+
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT COUNT(*) FROM snippets")
+    assert cursor.fetchone()[0] == 0
+
+
+def test_cmd_import_json_appends_without_overwriting(temp_db, capsys):
+    """Test JSON import appends and regenerates colliding IDs."""
+    snippets = default_snippets(db.APP_DIR)[:1]
+    result = db.import_snippets(temp_db.cursor(), temp_db, snippets)
+    assert result["imported"] == 1
+
+    json_path = db.APP_DIR / "imports" / "one_snippet.json"
+    json_path.write_text(
+        """[
+  {
+    "id": "cp_0001",
+    "title": "Imported Again",
+    "description": "desc",
+    "use_case": "use",
+    "tags": "tag",
+    "code": "int main() {}"
+  }
+]
+""",
+        encoding="utf-8",
+    )
+
+    args = MagicMock()
+    args.list_defaults = False
+    args.defaults = False
+    args.source = str(json_path)
+    args.format = None
+    args.encrypted = False
+    args.regenerate_ids = False
+
+    cli.cmd_import(args)
+
+    captured = capsys.readouterr()
+    assert "Imported 1 snippet(s)" in captured.out
+    assert "Regenerated 1 colliding ID(s)" in captured.out
+
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT id FROM snippets WHERE title = ?", ("Imported Again",))
+    imported_id = cursor.fetchone()[0]
+    assert imported_id.startswith("CP")
+    assert imported_id != "cp_0001"
+
+
+def test_cmd_import_markdown_and_html_exports(temp_db):
+    """Test markdown and HTML import parsers accept CPKB export shapes."""
+    md = b"""## MD Title (MD001)
+**Description:** Desc
+**Use case:** Use
+**Tags:** tag1, tag2
+
+```
+cout << 1;
+```
+"""
+    html = b"""<html><body><section><h2>HTML Title (HTML001)</h2><p><strong>Description:</strong> Desc</p><p><strong>Use case:</strong> Use</p><p><strong>Tags:</strong> tag</p><pre>cout &lt;&lt; 2;</pre></section><hr/></body></html>"""
+
+    md_path = db.APP_DIR / "imports" / "snippets.md"
+    html_path = db.APP_DIR / "imports" / "snippets.html"
+    md_path.write_bytes(md)
+    html_path.write_bytes(html)
+
+    for source in (md_path, html_path):
+        args = MagicMock()
+        args.list_defaults = False
+        args.defaults = False
+        args.source = str(source)
+        args.format = None
+        args.encrypted = False
+        args.regenerate_ids = False
+        cli.cmd_import(args)
+
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT title, code FROM snippets WHERE id = ?", ("MD001",))
+    assert cursor.fetchone() == ("MD Title", "cout << 1;")
+    cursor.execute("SELECT title, code FROM snippets WHERE id = ?", ("HTML001",))
+    assert cursor.fetchone() == ("HTML Title", "cout << 2;")
 
 
 def test_cmd_tag_add_remove(temp_db, capsys):
