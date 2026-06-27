@@ -1,26 +1,54 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpkb"
 version = "2.0.1"
 authors = [
-  { name="Aarav Shah", email="aarav@example.com" },
+  { name="Aarav Shah" },
 ]
 description = "A terminal-first Competitive Programming Knowledge Base"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["competitive-programming", "snippets", "knowledge-base", "terminal", "tui"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Environment :: Console",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Utilities",
 ]
 dependencies = [
     "textual>=0.47.0",
     "cryptography>=41.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+    "twine>=5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Aaravshah2907/cpkb"
+Repository = "https://github.com/Aaravshah2907/cpkb"
+Issues = "https://github.com/Aaravshah2907/cpkb/issues"
+Changelog = "https://github.com/Aaravshah2907/cpkb/releases"
+
 [project.scripts]
 cpkb = "cpkb.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

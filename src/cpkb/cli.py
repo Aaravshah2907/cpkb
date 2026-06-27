@@ -30,6 +30,7 @@ from .db import (
 )
 from .config import load_config, save_config
 from .default_snippets import default_snippets
+from . import __version__
 
 
 def _copy_to_clipboard(text: str) -> None:
@@ -1062,7 +1063,8 @@ def cmd_copy(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Competitive Programming Knowledge Base")
+    parser = argparse.ArgumentParser(prog="cpkb", description="Competitive Programming Knowledge Base")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # V1 Commands

@@ -1,6 +1,6 @@
 # Competitive Programming Knowledge Base (CPKB)
 
-![CPKB TUI Gallery](/intro-image.png)
+![CPKB TUI Gallery](https://raw.githubusercontent.com/Aaravshah2907/cpkb/main/intro-image.png)
 
 CPKB is a local, terminal-first knowledge base designed to store, search, and track usages of competitive programming snippets, algorithms, and tricks. It uses SQLite for storage, keeping your snippets incredibly fast and perfectly organised.
 
@@ -18,7 +18,30 @@ CPKB is a local, terminal-first knowledge base designed to store, search, and tr
 
 ## Installation
 
-CPKB V2 is a proper Python package. For normal usage, install it via pip:
+Install CPKB with `pipx`:
+
+```bash
+pipx install cpkb
+```
+
+Or install it with `pip`:
+
+```bash
+python -m pip install cpkb
+```
+
+### Homebrew
+
+After the first release is published, macOS and Linux users can install from the project tap:
+
+```bash
+brew tap Aaravshah2907/cpkb
+brew install cpkb
+```
+
+Until the tap is live, the formula template lives in `Formula/cpkb.rb`.
+
+### From Source
 
 ```bash
 git clone https://github.com/Aaravshah2907/cpkb.git
@@ -36,11 +59,10 @@ python3 -m venv venv
 source venv/bin/activate  # On Windows use: venv\Scripts\activate
 
 # 2. Install CPKB and test dependencies
-pip install -e .
-pip install pytest pytest-asyncio pytest-mock cryptography
+python -m pip install -e ".[dev]"
 
 # 3. Run the test suite
-pytest tests/
+pytest
 ```
 
 ## Platform‑specific dependencies
@@ -106,8 +128,8 @@ Data is kept completely separate from the code repo. The application automatical
 - `textual`
 - `cryptography` (for `encrypt-db` / `decrypt-db`)
 - `fzf` (Optional, for `cpkb fzf`)
-- macOS (uses `pbcopy` for clipboard interactions)
+- A platform clipboard helper: `pbcopy` on macOS, `xclip` or `xsel` on Linux, `clip` on Windows
 
 ## License
 
-Personal Knowledge Base (MIT License).
+MIT License.

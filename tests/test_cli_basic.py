@@ -1,5 +1,8 @@
 import importlib
 import sys
+from unittest.mock import patch
+
+import pytest
 
 
 def test_import_cpkb_cli():
@@ -27,3 +30,15 @@ def test_python_version():
     """Confirm the test environment runs on Python 3.11+ as required."""
     major, minor = sys.version_info[:2]
     assert (major, minor) >= (3, 11)
+
+
+def test_cli_version(capsys):
+    """Ensure package managers can smoke-test the installed CLI."""
+    from cpkb import __version__
+    from cpkb.cli import main
+
+    with patch.object(sys, "argv", ["cpkb", "--version"]), pytest.raises(SystemExit):
+        main()
+
+    captured = capsys.readouterr()
+    assert f"cpkb {__version__}" in captured.out
