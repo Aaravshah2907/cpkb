@@ -1,8 +1,8 @@
 class Cpkb < Formula
   desc "Terminal-first Competitive Programming Knowledge Base"
   homepage "https://github.com/Aaravshah2907/cpkb"
-  url "https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v2.0.3.tar.gz"
-  sha256 "4ac277652e6c98d8c8f81ff3a7e974cb4c91322307ae1da17591286594c8ce1e"
+  url "https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v2.0.4.tar.gz"
+  sha256 "115fe2143870b0231d1b8fcc917efb7c3e7b0e2436023df83e47cc6401a6633e"
   license "MIT"
 
   depends_on "python@3.11"
