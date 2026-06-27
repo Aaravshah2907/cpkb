@@ -19,7 +19,7 @@ This project is set up for PyPI trusted publishing and a Homebrew formula.
 5. Commit, tag, and push:
 
    ```bash
-   git tag v2.0.1
+   git tag v2.0.2
    git push origin main --tags
    ```
 
@@ -45,8 +45,8 @@ The formula in `Formula/cpkb.rb` is a template until the PyPI artifact and Pytho
 3. Download the PyPI source distribution without dependencies and replace the formula's main `sha256` with the PyPI sdist checksum:
 
    ```bash
-   python3 -m pip download --no-deps --no-binary :all: cpkb==2.0.1
-   shasum -a 256 cpkb-2.0.1.tar.gz
+   python3 -m pip download --no-deps --no-binary :all: cpkb==2.0.2
+   shasum -a 256 cpkb-2.0.2.tar.gz
    ```
 
 4. Vendor or verify Python resources with Homebrew:

@@ -278,6 +278,14 @@ def test_cmd_export_db_copies_sqlite_database(temp_db, capsys):
 
 def test_cmd_export_db_can_encrypt(temp_db, capsys):
     """Test encrypted DB export writes salt plus Fernet ciphertext."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {"max_number": 9999},
+            "backups": {"max_backups": 25},
+            "encryption": {"enabled": True},
+        },
+    )
     args_add = MagicMock()
     with patch("builtins.input", side_effect=["Secret", "Desc", "Use", "tag"]), \
          patch("sys.stdin.readlines", return_value=["code"]):
@@ -296,6 +304,16 @@ def test_cmd_export_db_can_encrypt(temp_db, capsys):
     raw = exports[0].read_bytes()
     assert len(raw) > 16
     assert raw[:16] != raw[16:32]
+
+
+def test_cmd_export_db_encrypted_requires_enabled_config(temp_db, capsys):
+    """Test encrypted DB export is blocked when encryption is disabled."""
+    args = MagicMock()
+    args.encrypted = True
+    cli.cmd_export_db(args)
+
+    captured = capsys.readouterr()
+    assert "Encryption is disabled" in captured.err
 
 
 def test_cmd_import_defaults_adds_cpp_cheatsheets(temp_db, capsys):

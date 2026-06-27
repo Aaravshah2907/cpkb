@@ -28,7 +28,7 @@ from .db import (
     get_due_snippet, get_unreviewed_snippet, upsert_review, get_srs_stats,
     APP_DIR, DB_PATH, KEY_PATH,
 )
-from .config import load_config, save_config
+from .config import encryption_enabled, load_config, save_config
 from .default_snippets import default_snippets
 from . import __version__
 
@@ -84,6 +84,29 @@ def cmd_config(args: argparse.Namespace) -> None:
 # Encryption
 # ---------------------------------------------------------------------------
 
+def _require_encryption_available() -> bool:
+    """Return whether encryption is enabled and its optional dependency exists."""
+    if not encryption_enabled(APP_DIR):
+        print(
+            "Encryption is disabled in CPKB config. Enable it by setting "
+            '"encryption.enabled" to true in config.json, then install the '
+            'optional dependency with: python3 -m pip install "cpkb[encrypt]"',
+            file=sys.stderr,
+        )
+        return False
+
+    try:
+        import cryptography  # noqa: F401
+    except ImportError:
+        print(
+            'Encryption support requires the optional dependency. Install it with: '
+            'python3 -m pip install "cpkb[encrypt]"',
+            file=sys.stderr,
+        )
+        return False
+
+    return True
+
 def _derive_fernet_key(password: str, salt: bytes) -> bytes:
     """Derive a Fernet-compatible key from *password* and *salt* using PBKDF2."""
     import base64
@@ -106,6 +129,9 @@ def cmd_encrypt_db(args: argparse.Namespace) -> None:
     A random 16-byte salt is generated and prepended to the encrypted output.
     No key or password is stored on disk — only the salt.
     """
+    if not _require_encryption_available():
+        return
+
     import getpass
     from cryptography.fernet import Fernet
 
@@ -157,6 +183,9 @@ def cmd_encrypt_db(args: argparse.Namespace) -> None:
 
 def cmd_decrypt_db(args: argparse.Namespace) -> None:
     """Decrypt the previously encrypted SQLite database using a password."""
+    if not _require_encryption_available():
+        return
+
     import getpass
     from cryptography.fernet import Fernet
 
@@ -794,6 +823,9 @@ def cmd_export_db(args: argparse.Namespace) -> None:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     if args.encrypted:
+        if not _require_encryption_available():
+            return
+
         import getpass
         from cryptography.fernet import Fernet
 
@@ -848,6 +880,12 @@ def _read_source(source: str) -> tuple[bytes, str]:
 
 
 def _decrypt_export(raw: bytes, password: str) -> bytes:
+    if not _require_encryption_available():
+        raise RuntimeError(
+            'Encryption support is disabled or unavailable. Enable encryption in '
+            'config.json and install with: python3 -m pip install "cpkb[encrypt]"'
+        )
+
     from cryptography.fernet import Fernet
 
     salt = raw[:16]

@@ -26,6 +26,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "imports": {
         "load_cpp_cheatsheet_on_setup": False,
     },
+    "encryption": {
+        "enabled": False,
+    },
 }
 
 
@@ -85,3 +88,8 @@ def max_backups(app_dir: Path) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 25
+
+
+def encryption_enabled(app_dir: Path) -> bool:
+    """Return whether encryption commands are enabled in config."""
+    return bool(load_config(app_dir).get("encryption", {}).get("enabled", False))

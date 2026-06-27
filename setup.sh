@@ -137,6 +137,7 @@ MAX_BACKUPS="$(prompt_default "Maximum backups to keep" "25")"
 THEME="$(prompt_default "TUI theme" "textual-dark")"
 ACCENT_COLOR="$(prompt_default "Display accent color" "cyan")"
 LOAD_CPP="$(prompt_default "Load bundled C++ cheatsheet on setup? (true/false)" "false")"
+ENABLE_ENCRYPTION="$(prompt_default "Enable encryption commands? Requires optional cryptography dependency. (true/false)" "false")"
 
 case "$(uname -s)" in
   Darwin)
@@ -156,7 +157,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-"$PYTHON_BIN" - "$CONFIG_PATH" "$DEFAULT_LANGUAGE" "$MAX_SNIPPETS" "$MAX_BACKUPS" "$THEME" "$ACCENT_COLOR" "$LOAD_CPP" <<'PY'
+"$PYTHON_BIN" - "$CONFIG_PATH" "$DEFAULT_LANGUAGE" "$MAX_SNIPPETS" "$MAX_BACKUPS" "$THEME" "$ACCENT_COLOR" "$LOAD_CPP" "$ENABLE_ENCRYPTION" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -171,7 +172,7 @@ def as_int(value, default, minimum=0):
 
 config = {
     "config_version": 1,
-    "app_version": "2.0.1",
+    "app_version": "2.0.2",
     "default_language": sys.argv[2] or "cpp",
     "display": {
         "theme": sys.argv[5] or "textual-dark",
@@ -186,6 +187,9 @@ config = {
     "imports": {
         "load_cpp_cheatsheet_on_setup": sys.argv[7].strip().lower() in {"1", "true", "yes", "y"},
     },
+    "encryption": {
+        "enabled": sys.argv[8].strip().lower() in {"1", "true", "yes", "y"},
+    },
 }
 
 path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
@@ -193,7 +197,10 @@ print(path)
 PY
 
 if prompt_yes_no "Install/update this checkout as the active cpkb command with '$PYTHON_BIN -m pip install -e .'?" "y"; then
-  "$PYTHON_BIN" -m pip install -e .
+  case "$(printf "%s" "$ENABLE_ENCRYPTION" | tr '[:upper:]' '[:lower:]')" in
+    y|yes|true|1) "$PYTHON_BIN" -m pip install -e ".[encrypt]" ;;
+    *) "$PYTHON_BIN" -m pip install -e . ;;
+  esac
 fi
 
 if prompt_yes_no "Install optional test/development Python packages (pytest, pytest-asyncio, pytest-mock)?" "n"; then
