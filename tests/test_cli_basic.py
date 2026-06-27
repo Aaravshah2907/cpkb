@@ -42,3 +42,15 @@ def test_cli_version(capsys):
 
     captured = capsys.readouterr()
     assert f"cpkb {__version__}" in captured.out
+
+
+def test_cli_help_includes_tag_commands(capsys):
+    """Ensure implemented tag commands are exposed by argparse."""
+    from cpkb.cli import main
+
+    with patch.object(sys, "argv", ["cpkb", "--help"]), pytest.raises(SystemExit):
+        main()
+
+    captured = capsys.readouterr()
+    assert "tag-add" in captured.out
+    assert "tag-remove" in captured.out

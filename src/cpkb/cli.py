@@ -1282,6 +1282,16 @@ def main() -> None:
     parser_delete.add_argument("id", help="Snippet ID")
     parser_delete.set_defaults(func=cmd_delete)
 
+    parser_tag_add = subparsers.add_parser("tag-add", help="Add a tag to a snippet")
+    parser_tag_add.add_argument("id", help="Snippet ID")
+    parser_tag_add.add_argument("tag", help="Tag to add")
+    parser_tag_add.set_defaults(func=cmd_tag_add)
+
+    parser_tag_remove = subparsers.add_parser("tag-remove", help="Remove a tag from a snippet")
+    parser_tag_remove.add_argument("id", help="Snippet ID")
+    parser_tag_remove.add_argument("tag", help="Tag to remove")
+    parser_tag_remove.set_defaults(func=cmd_tag_remove)
+
     parser_recent = subparsers.add_parser("recent", help="Show recent snippets")
     parser_recent.add_argument("-n", "--limit", type=int, default=10, help="Number of snippets to show")
     parser_recent.set_defaults(func=cmd_recent)
