@@ -22,13 +22,17 @@ The recommended install method is `pipx`:
 
 ```bash
 pipx install cpkb
+cpkb setup
 ```
 
 You can also install it with `pip`:
 
 ```bash
 python -m pip install cpkb
+cpkb setup
 ```
+
+The pip and pipx packages install the Python dependencies declared by CPKB, including Textual for `cpkb tui`.
 
 ### Homebrew
 
@@ -38,9 +42,10 @@ macOS and Linux users can install CPKB from the Homebrew tap:
 brew tap Aaravshah2907/cpkb
 brew trust --formula Aaravshah2907/cpkb/cpkb
 brew install cpkb
+cpkb setup
 ```
 
-The Homebrew package installs the lightweight core app and avoids the optional encryption dependency so installs stay fast.
+The Homebrew package runs CPKB with your global `python3` instead of a private Homebrew virtualenv, so Python packages you install globally are visible to `cpkb`. If `cpkb tui` reports that Textual is missing, install it into that same Python with the command printed by CPKB.
 
 ### Optional Encryption
 
@@ -50,6 +55,7 @@ For encryption support, install with the `encrypt` extra:
 
 ```bash
 pipx install "cpkb[encrypt]"
+cpkb setup --enable-encryption
 ```
 
 Then enable encryption in your CPKB config:
@@ -132,6 +138,7 @@ Here are the commands available in Version 2.0:
 - `cpkb import --defaults`: Import bundled C++ STL competitive-programming cheatsheets with special `cp_` IDs.
 - `cpkb import --list-defaults`: Preview the bundled cheatsheets before importing.
 - `cpkb backup`: Manually trigger a backup of the SQLite database.
+- `cpkb setup`: Set up app directories, config, optional encryption settings, and bundled defaults after pip or Homebrew install.
 
 ### New V2 Commands
 

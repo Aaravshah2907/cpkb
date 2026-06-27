@@ -13,6 +13,7 @@ import platform
 import random as rnd
 import shutil
 import sqlite3
+import importlib.util
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -28,7 +29,7 @@ from .db import (
     get_due_snippet, get_unreviewed_snippet, upsert_review, get_srs_stats,
     APP_DIR, DB_PATH, KEY_PATH,
 )
-from .config import encryption_enabled, load_config, save_config
+from .config import DEFAULT_CONFIG, encryption_enabled, load_config, save_config
 from .default_snippets import default_snippets
 from . import __version__
 
@@ -78,6 +79,117 @@ def cmd_config(args: argparse.Namespace) -> None:
     path = save_config(APP_DIR, load_config(APP_DIR))
     print(f"Config: {path}")
     print(json.dumps(load_config(APP_DIR), indent=2))
+
+
+def _prompt_default(prompt: str, default: str) -> str:
+    answer = input(f"{prompt} [{default}]: ").strip()
+    return answer or default
+
+
+def _as_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _as_int(value: str, default: int, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int(value))
+    except ValueError:
+        return default
+
+
+def _print_setup_tool_notes() -> None:
+    system = platform.system().lower()
+    if system == "darwin":
+        print("Clipboard: pbcopy is built in. Optional fuzzy finder: brew install fzf")
+    elif system == "linux":
+        print("Clipboard: install xclip or xsel. Optional fuzzy finder: install fzf")
+    elif system == "windows":
+        print("Clipboard: clip is built in. Optional fuzzy finder: scoop install fzf or choco install fzf")
+    else:
+        print("Clipboard support depends on your OS. Optional fuzzy finder: install fzf")
+
+
+def cmd_setup(args: argparse.Namespace) -> None:
+    """Initialize CPKB app directories and config from the installed CLI."""
+    config = load_config(APP_DIR)
+
+    if args.yes:
+        default_language = config.get("default_language", DEFAULT_CONFIG["default_language"])
+        max_snippets_value = str(config.get("snippets", {}).get("max_number", 9999))
+        max_backups_value = str(config.get("backups", {}).get("max_backups", 25))
+        theme = config.get("display", {}).get("theme", "textual-dark")
+        accent_color = config.get("display", {}).get("accent_color", "cyan")
+        load_cpp = args.load_defaults
+        enable_encryption = bool(args.enable_encryption)
+    else:
+        default_language = _prompt_default(
+            "Default programming language",
+            str(config.get("default_language", DEFAULT_CONFIG["default_language"])),
+        )
+        max_snippets_value = _prompt_default(
+            "Maximum number of snippets",
+            str(config.get("snippets", {}).get("max_number", 9999)),
+        )
+        max_backups_value = _prompt_default(
+            "Maximum backups to keep",
+            str(config.get("backups", {}).get("max_backups", 25)),
+        )
+        theme = _prompt_default(
+            "TUI theme",
+            str(config.get("display", {}).get("theme", "textual-dark")),
+        )
+        accent_color = _prompt_default(
+            "Display accent color",
+            str(config.get("display", {}).get("accent_color", "cyan")),
+        )
+        load_cpp = _as_bool(_prompt_default("Load bundled C++ cheatsheet on setup? (true/false)", "false"))
+        enable_encryption = _as_bool(
+            _prompt_default("Enable encryption commands? Requires optional cryptography dependency. (true/false)", "false")
+        )
+
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    for subdir in ("backups", "exports", "imports", "logs", "attachments"):
+        (APP_DIR / subdir).mkdir(exist_ok=True)
+
+    updated_config = {
+        **DEFAULT_CONFIG,
+        "default_language": default_language,
+        "display": {
+            "theme": theme,
+            "accent_color": accent_color,
+        },
+        "snippets": {
+            "max_number": _as_int(max_snippets_value, 9999, 1),
+        },
+        "backups": {
+            "max_backups": _as_int(max_backups_value, 25, 0),
+        },
+        "imports": {
+            "load_cpp_cheatsheet_on_setup": bool(load_cpp),
+        },
+        "encryption": {
+            "enabled": bool(enable_encryption),
+        },
+    }
+    config_path = save_config(APP_DIR, updated_config)
+    conn = init_db()
+    conn.close()
+
+    if load_cpp:
+        class ImportDefaultsArgs:
+            list_defaults = False
+            defaults = True
+            source = None
+            format = None
+            encrypted = False
+            regenerate_ids = False
+
+        cmd_import(ImportDefaultsArgs())
+
+    print("\nCPKB setup complete.")
+    print(f"Config written to: {config_path}")
+    print(f"Active Python: {sys.executable}")
+    _print_setup_tool_notes()
 
 
 # ---------------------------------------------------------------------------
@@ -1036,11 +1148,28 @@ def cmd_import(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_tui(args: argparse.Namespace) -> None:
+    if importlib.util.find_spec("textual") is None:
+        print(
+            "Error: Textual is not installed for the Python running cpkb.",
+            file=sys.stderr,
+        )
+        print(
+            f"Install it with: {sys.executable} -m pip install textual",
+            file=sys.stderr,
+        )
+        if "Cellar" in sys.executable and "libexec" in sys.executable:
+            print(
+                "This looks like a Homebrew private virtualenv, so global pip installs "
+                "will not be visible to this cpkb command.",
+                file=sys.stderr,
+            )
+        return
+
     try:
         from .tui import run_tui
         run_tui()
-    except ImportError:
-        print("Error: Textual is not installed. Run 'pip install textual' first.", file=sys.stderr)
+    except ImportError as exc:
+        print(f"Error: failed to import the Textual TUI: {exc}", file=sys.stderr)
 
 
 def cmd_fzf(args: argparse.Namespace) -> None:
@@ -1181,6 +1310,12 @@ def main() -> None:
 
     parser_config = subparsers.add_parser("config", help="Show active configuration")
     parser_config.set_defaults(func=cmd_config)
+
+    parser_setup = subparsers.add_parser("setup", help="Set up CPKB directories, config, and optional defaults")
+    parser_setup.add_argument("-y", "--yes", action="store_true", help="Accept current/default config values without prompts")
+    parser_setup.add_argument("--load-defaults", action="store_true", help="Import bundled C++ STL cheatsheets")
+    parser_setup.add_argument("--enable-encryption", action="store_true", help="Enable encryption commands in config")
+    parser_setup.set_defaults(func=cmd_setup)
 
     parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database with a password")
     parser_encrypt.set_defaults(func=cmd_encrypt_db)

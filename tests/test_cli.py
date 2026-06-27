@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 import sqlite3
 import tempfile
 import time
+import sys
 from pathlib import Path
 from cpkb import cli
 from cpkb import db
@@ -170,6 +171,48 @@ def test_cmd_config_creates_default_config(temp_db, capsys):
     assert "config.json" in captured.out
     assert '"default_language": "cpp"' in captured.out
     assert (db.APP_DIR / "config.json").exists()
+
+
+def test_cmd_setup_yes_creates_config_and_directories(temp_db, capsys):
+    """Test non-interactive setup mirrors setup.sh defaults."""
+    args = MagicMock()
+    args.yes = True
+    args.load_defaults = False
+    args.enable_encryption = False
+
+    cli.cmd_setup(args)
+
+    captured = capsys.readouterr()
+    assert "CPKB setup complete." in captured.out
+    assert "Config written to:" in captured.out
+    assert "Active Python:" in captured.out
+    assert (db.APP_DIR / "config.json").exists()
+    for subdir in ("backups", "exports", "imports", "logs", "attachments"):
+        assert (db.APP_DIR / subdir).is_dir()
+
+
+def test_cmd_setup_can_import_defaults(temp_db):
+    """Test setup can load bundled defaults like setup.sh."""
+    args = MagicMock()
+    args.yes = True
+    args.load_defaults = True
+    args.enable_encryption = False
+
+    cli.cmd_setup(args)
+
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT COUNT(*) FROM snippets")
+    assert cursor.fetchone()[0] == 16
+
+
+def test_cmd_tui_missing_textual_reports_active_python(capsys):
+    """Test TUI dependency errors point at the interpreter running cpkb."""
+    with patch("cpkb.cli.importlib.util.find_spec", return_value=None):
+        cli.cmd_tui(MagicMock())
+
+    captured = capsys.readouterr()
+    assert "Textual is not installed for the Python running cpkb" in captured.err
+    assert f"{sys.executable} -m pip install textual" in captured.err
 
 
 def test_generate_id_respects_configured_max_snippets(temp_db):

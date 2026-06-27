@@ -19,7 +19,7 @@ This project is set up for PyPI trusted publishing and a Homebrew formula.
 5. Commit, tag, and push:
 
    ```bash
-   git tag v2.0.2
+   git tag v2.0.3
    git push origin main --tags
    ```
 
@@ -27,7 +27,7 @@ The `Publish` workflow builds the source distribution and wheel, then publishes 
 
 ## Homebrew
 
-The formula in `Formula/cpkb.rb` is a template until the PyPI artifact and Python resource checksums are filled in. Homebrew 6 requires formula developer commands to run against a tap, not an arbitrary path.
+The formula in `Formula/cpkb.rb` points at the GitHub release source distribution and uses a real SHA256 checksum. Homebrew 6 requires formula developer commands to run against a tap, not an arbitrary path.
 
 1. Create or update the tap:
 
@@ -42,17 +42,16 @@ The formula in `Formula/cpkb.rb` is a template until the PyPI artifact and Pytho
    brew trust --formula Aaravshah2907/cpkb/cpkb
    ```
 
-3. Download the PyPI source distribution without dependencies and replace the formula's main `sha256` with the PyPI sdist checksum:
+3. Build the source distribution, upload it to the GitHub release as `cpkb-2.0.3.tar.gz`, and verify the formula's main `sha256` with that exact artifact:
 
    ```bash
-   python3 -m pip download --no-deps --no-binary :all: cpkb==2.0.2
-   shasum -a 256 cpkb-2.0.2.tar.gz
+   python3 -m build --sdist --no-isolation
+   shasum -a 256 dist/cpkb-2.0.3.tar.gz
    ```
 
-4. Vendor or verify Python resources with Homebrew:
+4. Verify the Homebrew package:
 
    ```bash
-   brew update-python-resources Aaravshah2907/cpkb/cpkb
    brew audit --strict --online Aaravshah2907/cpkb/cpkb
    brew install --build-from-source Aaravshah2907/cpkb/cpkb
    brew test Aaravshah2907/cpkb/cpkb
