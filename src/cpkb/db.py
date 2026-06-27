@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import os
 
-from .config import load_config, max_backups, max_snippets, save_config
+from .config import DEFAULT_CONFIG, load_config, max_backups, max_snippets, save_config
 
 # XDG Base Directory specification
 XDG_DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
@@ -199,13 +199,37 @@ def _now() -> str:
 # ID Generation
 # ---------------------------------------------------------------------------
 
-def generate_id(cursor: sqlite3.Cursor) -> str:
-    """Generate the next snippet ID (e.g., CP0001)."""
-    width = len(str(max_snippets(APP_DIR)))
-    cursor.execute("SELECT id FROM snippets WHERE id GLOB 'CP[0-9]*'")
+def _id_format_config(format_name: str | None = None) -> tuple[str, int]:
+    """Return the prefix and numeric width for a configured ID format."""
+    config = load_config(APP_DIR)
+    snippets_config = config.get("snippets", {})
+    selected = format_name or snippets_config.get("default_id_format", "default")
+    formats = snippets_config.get("id_formats", {})
+
+    fallback_formats = DEFAULT_CONFIG["snippets"]["id_formats"]
+    format_config = formats.get(selected) or fallback_formats["default"]
+    prefix = str(format_config.get("prefix", "CP"))
+    width_value = format_config.get("width", "auto")
+    if width_value == "auto":
+        width = len(str(max_snippets(APP_DIR)))
+    else:
+        try:
+            width = max(1, int(width_value))
+        except (TypeError, ValueError):
+            width = len(str(max_snippets(APP_DIR)))
+
+    return prefix, width
+
+
+def generate_id(cursor: sqlite3.Cursor, format_name: str | None = None) -> str:
+    """Generate the next snippet ID for a configured format (e.g., CP0001)."""
+    prefix, width = _id_format_config(format_name)
+    cursor.execute("SELECT id FROM snippets")
     existing = []
     for (snippet_id,) in cursor.fetchall():
-        suffix = snippet_id[2:]
+        if not snippet_id.startswith(prefix):
+            continue
+        suffix = snippet_id[len(prefix):]
         if suffix.isdigit():
             existing.append(int(suffix))
 
@@ -213,7 +237,7 @@ def generate_id(cursor: sqlite3.Cursor) -> str:
     limit = max_snippets(APP_DIR)
     if next_num > limit:
         raise ValueError(f"Maximum snippet count reached ({limit}). Update config.json to increase it.")
-    return f"CP{next_num:0{width}d}"
+    return f"{prefix}{next_num:0{width}d}"
 
 
 # ---------------------------------------------------------------------------
@@ -234,9 +258,9 @@ def update_tags(cursor: sqlite3.Cursor, snippet_id: str, tags_str: str) -> None:
 
 def add_snippet(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
                 title: str, description: str, use_case: str,
-                tags: str, code: str) -> str:
+                tags: str, code: str, id_format: str | None = None) -> str:
     """Insert a new snippet and return its generated ID."""
-    snippet_id = generate_id(cursor)
+    snippet_id = generate_id(cursor, id_format)
     now = _now()
     cursor.execute('''
         INSERT INTO snippets (id, title, description, use_case, tags, code, created_at, updated_at)
@@ -267,7 +291,8 @@ def insert_snippet_with_id(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
 
 
 def import_snippets(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
-                    snippets: list[dict], preserve_ids: bool = True) -> dict:
+                    snippets: list[dict], preserve_ids: bool = True,
+                    id_format: str | None = None) -> dict:
     """Append snippet dictionaries into the current DB without overwriting rows.
 
     If ``preserve_ids`` is true, incoming IDs are kept when they do not already
@@ -293,7 +318,7 @@ def import_snippets(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
                 target_id = source_id
 
         if not target_id:
-            target_id = generate_id(cursor)
+            target_id = generate_id(cursor, id_format)
 
         insert_snippet_with_id(
             cursor,

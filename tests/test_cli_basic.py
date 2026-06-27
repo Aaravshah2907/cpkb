@@ -54,3 +54,14 @@ def test_cli_help_includes_tag_commands(capsys):
     captured = capsys.readouterr()
     assert "tag-add" in captured.out
     assert "tag-remove" in captured.out
+
+
+def test_setup_help_includes_reset_config(capsys):
+    """Ensure setup exposes reset-config for safe reconfiguration."""
+    from cpkb.cli import main
+
+    with patch.object(sys, "argv", ["cpkb", "setup", "--help"]), pytest.raises(SystemExit):
+        main()
+
+    captured = capsys.readouterr()
+    assert "--reset-config" in captured.out

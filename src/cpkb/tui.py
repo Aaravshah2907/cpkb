@@ -1,18 +1,32 @@
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown, Input, Button, TextArea
+from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown, Input, Button, TextArea, Select
 from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.reactive import reactive
+from textual.theme import Theme
 
 from .db import (
     init_db, add_snippet, get_snippet_fields, update_snippet,
     delete_snippet, search_snippets_full, add_tag, remove_tag,
-    add_usage, get_usages,
+    add_usage, get_usages, APP_DIR,
 )
+from .config import DEFAULT_CONFIG, load_config, save_config
 import platform, os
 if platform.system().lower() == "windows":
     os.system("")
+
+
+ACCENT_COLORS = {
+    "cyan": "#00ffff",
+    "blue": "#3399ff",
+    "green": "#4EBF71",
+    "yellow": "#fabd2f",
+    "orange": "#ff9e64",
+    "pink": "#ff79c6",
+    "purple": "#bd93f9",
+    "red": "#ff5555",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +55,11 @@ class AddSnippetModal(ModalScreen[dict]):
         height: 1fr;
     }
     """
+    def __init__(self, code_language: str = "python", default_tags: str = "") -> None:
+        super().__init__()
+        self._code_language = code_language
+        self._default_tags = default_tags
+
     def compose(self) -> ComposeResult:
         with Vertical(id="add-dialog"):
             yield Label("➕ Add New Snippet", id="add-title")
@@ -51,9 +70,9 @@ class AddSnippetModal(ModalScreen[dict]):
             yield Label("Use Case:")
             yield Input(id="use-input")
             yield Label("Tags (comma separated):")
-            yield Input(id="tags-input")
+            yield Input(value=self._default_tags, id="tags-input")
             yield Label("Code:")
-            yield TextArea(id="code-input", language="python")
+            yield TextArea(id="code-input", language=self._code_language)
             with Horizontal():
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
@@ -97,7 +116,8 @@ class EditSnippetModal(ModalScreen[dict]):
     """
 
     def __init__(self, snippet_id: str, title: str, desc: str,
-                 use_case: str, tags: str, code: str) -> None:
+                 use_case: str, tags: str, code: str,
+                 code_language: str = "python") -> None:
         super().__init__()
         self._snippet_id = snippet_id
         self._title = title
@@ -105,6 +125,7 @@ class EditSnippetModal(ModalScreen[dict]):
         self._use_case = use_case
         self._tags = tags
         self._code = code
+        self._code_language = code_language
 
     def compose(self) -> ComposeResult:
         with Vertical(id="edit-dialog"):
@@ -118,7 +139,7 @@ class EditSnippetModal(ModalScreen[dict]):
             yield Label("Tags (comma separated):")
             yield Input(value=self._tags, id="tags-input")
             yield Label("Code:")
-            yield TextArea(id="code-input", language="python")
+            yield TextArea(id="code-input", language=self._code_language)
             with Horizontal():
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
@@ -260,6 +281,61 @@ class UseSnippetModal(ModalScreen[dict]):
             self.dismiss(None)
 
 
+class SettingsModal(ModalScreen[dict]):
+    """Modal for updating persistent display settings."""
+    CSS = """
+    SettingsModal {
+        align: center middle;
+    }
+    #settings-dialog {
+        padding: 1 2;
+        width: 62;
+        height: 15;
+        border: thick $primary;
+        background: $surface;
+    }
+    #settings-dialog Label {
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, themes: list[str], current_theme: str, current_accent: str) -> None:
+        super().__init__()
+        self._themes = themes
+        self._current_theme = current_theme
+        self._current_accent = current_accent
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="settings-dialog"):
+            yield Label("Settings")
+            yield Label("Theme:")
+            yield Select(
+                [(theme, theme) for theme in self._themes],
+                value=self._current_theme,
+                allow_blank=False,
+                id="theme-select",
+            )
+            yield Label("Accent:")
+            yield Select(
+                [(name.title(), name) for name in ACCENT_COLORS],
+                value=self._current_accent,
+                allow_blank=False,
+                id="accent-select",
+            )
+            with Horizontal():
+                yield Button("Apply", variant="success", id="apply-btn")
+                yield Button("Cancel", variant="error", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "apply-btn":
+            self.dismiss({
+                "theme": str(self.query_one("#theme-select", Select).value),
+                "accent_color": str(self.query_one("#accent-select", Select).value),
+            })
+        else:
+            self.dismiss(None)
+
+
 # ---------------------------------------------------------------------------
 # Main Application
 # ---------------------------------------------------------------------------
@@ -296,6 +372,7 @@ class SnippetApp(App):
         Binding("ctrl+u", "use_snippet", "Use"),
         Binding("ctrl+d", "delete_snippet", "Delete"),
         Binding("ctrl+t", "edit_tags", "Edit Tags"),
+        Binding("ctrl+comma", "settings", "Settings"),
         Binding("j", "scroll_detail_down", "Detail Down", show=False),
         Binding("k", "scroll_detail_up", "Detail Up", show=False),
         Binding("pagedown", "page_detail_down", "Detail Page Down", show=False),
@@ -313,6 +390,72 @@ class SnippetApp(App):
             with Vertical(id="right-pane"):
                 yield Markdown("Select a snippet from the list to view its contents.", id="snippet-view")
         yield Footer()
+
+    def _load_display_config(self) -> tuple[str, str]:
+        config = load_config(APP_DIR)
+        display = config.get("display", {})
+        theme = str(display.get("theme", DEFAULT_CONFIG["display"]["theme"]))
+        accent = str(display.get("accent_color", DEFAULT_CONFIG["display"]["accent_color"]))
+        try:
+            pane_width = int(display.get("left_pane_width", DEFAULT_CONFIG["display"]["left_pane_width"]))
+        except (TypeError, ValueError):
+            pane_width = DEFAULT_CONFIG["display"]["left_pane_width"]
+        self.left_pane_width = max(
+            15,
+            min(70, pane_width),
+        )
+        snippets_config = config.get("snippets", {})
+        self.code_language = str(
+            snippets_config.get("code_language")
+            or config.get("default_language")
+            or DEFAULT_CONFIG["snippets"]["code_language"]
+        )
+        self.default_tags = str(snippets_config.get("default_tags") or "")
+        return theme, accent
+
+    def _custom_theme_name(self, theme: str, accent: str) -> str:
+        return f"cpkb-{theme}-{accent}"
+
+    def _apply_display_config(self, theme: str, accent: str) -> tuple[str, str]:
+        if theme not in self.available_themes:
+            theme = DEFAULT_CONFIG["display"]["theme"]
+        if accent not in ACCENT_COLORS:
+            accent = DEFAULT_CONFIG["display"]["accent_color"]
+
+        base = self.available_themes[theme]
+        custom_theme = Theme(
+            name=self._custom_theme_name(theme, accent),
+            primary=ACCENT_COLORS[accent],
+            secondary=base.secondary,
+            warning=base.warning,
+            error=base.error,
+            success=base.success,
+            accent=ACCENT_COLORS[accent],
+            foreground=base.foreground,
+            background=base.background,
+            surface=base.surface,
+            panel=base.panel,
+            boost=base.boost,
+            dark=base.dark,
+            luminosity_spread=base.luminosity_spread,
+            text_alpha=base.text_alpha,
+            variables=dict(base.variables),
+            ansi=base.ansi,
+        )
+        if custom_theme.name in self.available_themes:
+            self.unregister_theme(custom_theme.name)
+        self.register_theme(custom_theme)
+        self.theme = custom_theme.name
+        self.display_theme = theme
+        self.display_accent = accent
+        return theme, accent
+
+    def _save_display_config(self, theme: str, accent: str) -> None:
+        config = load_config(APP_DIR)
+        display = config.setdefault("display", {})
+        display["theme"] = theme
+        display["accent_color"] = accent
+        save_config(APP_DIR, config)
 
     def watch_left_pane_width(self, value: int) -> None:
         """Update pane widths when the reactive property changes."""
@@ -349,6 +492,8 @@ class SnippetApp(App):
     async def on_mount(self) -> None:
         self.conn = init_db()
         self.cursor = self.conn.cursor()
+        theme, accent = self._load_display_config()
+        self._apply_display_config(theme, accent)
         self.watch_left_pane_width(self.left_pane_width)
         await self.action_refresh()
 
@@ -358,6 +503,24 @@ class SnippetApp(App):
     async def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "search-input":
             await self.action_refresh(query=event.value)
+
+    async def action_settings(self) -> None:
+        """Open persistent display settings."""
+        themes = sorted(
+            theme for theme in self.available_themes
+            if not theme.startswith("cpkb-")
+        )
+
+        def check_result(result: dict | None) -> None:
+            if result:
+                theme, accent = self._apply_display_config(result["theme"], result["accent_color"])
+                self._save_display_config(theme, accent)
+                self.notify("Display settings saved.")
+
+        self.push_screen(
+            SettingsModal(themes, self.display_theme, self.display_accent),
+            check_result,
+        )
 
     # ------------------------------------------------------------------
     # Refresh
@@ -420,7 +583,15 @@ class SnippetApp(App):
                     self.notify(f"Snippet {snippet_id} updated!")
 
             self.push_screen(
-                EditSnippetModal(snippet_id, title, desc or "", use_case or "", tags or "", code),
+                EditSnippetModal(
+                    snippet_id,
+                    title,
+                    desc or "",
+                    use_case or "",
+                    tags or "",
+                    code,
+                    self.code_language,
+                ),
                 check_result,
             )
 
@@ -485,7 +656,7 @@ class SnippetApp(App):
                 self.run_worker(self.action_refresh())
                 self.notify(f"Added snippet {snippet_id}!")
 
-        self.push_screen(AddSnippetModal(), check_result)
+        self.push_screen(AddSnippetModal(self.code_language, self.default_tags), check_result)
 
     # ------------------------------------------------------------------
     # Use (native modal)
@@ -520,7 +691,7 @@ class SnippetApp(App):
             if row[1]: md_content += f"**Description:** {row[1]}\n\n"
             if row[2]: md_content += f"**Use Case:** {row[2]}\n\n"
             if row[3]: md_content += f"**Tags:** {row[3]}\n\n"
-            md_content += f"```python\n{row[4]}\n```\n"
+            md_content += f"```{self.code_language}\n{row[4]}\n```\n"
 
             # Fetch usages
             usages = get_usages(self.cursor, snippet_id)

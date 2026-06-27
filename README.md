@@ -34,6 +34,9 @@ cpkb setup
 
 The pip and pipx packages install the Python dependencies declared by CPKB, including Textual for `cpkb tui`.
 
+You can safely run `cpkb setup` again later to revisit configuration; it preserves your snippet database.
+Use `cpkb setup --reset-config` to start the prompts from factory defaults without deleting snippets.
+
 ### Homebrew
 
 macOS and Linux users can install CPKB from the Homebrew tap:
@@ -138,7 +141,8 @@ Here are the commands available in Version 2.0:
 - `cpkb import --defaults`: Import bundled C++ STL competitive-programming cheatsheets with special `cp_` IDs.
 - `cpkb import --list-defaults`: Preview the bundled cheatsheets before importing.
 - `cpkb backup`: Manually trigger a backup of the SQLite database.
-- `cpkb setup`: Set up app directories, config, optional encryption settings, and bundled defaults after pip or Homebrew install.
+- `cpkb setup`: Set up or revisit app directories, config, optional encryption settings, and bundled defaults without deleting snippets.
+- `cpkb setup --reset-config`: Recreate config from factory defaults while preserving your snippet database.
 
 ### New V2 Commands
 

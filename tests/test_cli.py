@@ -179,14 +179,22 @@ def test_cmd_setup_yes_creates_config_and_directories(temp_db, capsys):
     args.yes = True
     args.load_defaults = False
     args.enable_encryption = False
+    args.reset_config = False
 
     cli.cmd_setup(args)
 
     captured = capsys.readouterr()
     assert "CPKB setup complete." in captured.out
     assert "Config written to:" in captured.out
+    assert "Database preserved at:" in captured.out
     assert "Active Python:" in captured.out
     assert (db.APP_DIR / "config.json").exists()
+    saved = cpkb_config.load_config(db.APP_DIR)
+    assert saved["snippets"]["default_id_format"] == "default"
+    assert saved["snippets"]["id_formats"]["default"]["prefix"] == "CP"
+    assert saved["snippets"]["code_language"] == "cpp"
+    assert "editor" in saved
+    assert "left_pane_width" in saved["display"]
     for subdir in ("backups", "exports", "imports", "logs", "attachments"):
         assert (db.APP_DIR / subdir).is_dir()
 
@@ -197,12 +205,56 @@ def test_cmd_setup_can_import_defaults(temp_db):
     args.yes = True
     args.load_defaults = True
     args.enable_encryption = False
+    args.reset_config = False
 
     cli.cmd_setup(args)
 
     cursor = temp_db.cursor()
     cursor.execute("SELECT COUNT(*) FROM snippets")
     assert cursor.fetchone()[0] == 16
+
+
+def test_cmd_setup_preserves_existing_snippets(temp_db):
+    """Test setup can be rerun without deleting stored snippets."""
+    cursor = temp_db.cursor()
+    snippet_id = db.add_snippet(cursor, temp_db, "Keep Me", "desc", "use", "tag", "code")
+
+    args = MagicMock()
+    args.yes = True
+    args.load_defaults = False
+    args.enable_encryption = False
+    args.reset_config = True
+
+    cli.cmd_setup(args)
+
+    cursor.execute("SELECT title FROM snippets WHERE id = ?", (snippet_id,))
+    assert cursor.fetchone() == ("Keep Me",)
+
+
+def test_cmd_setup_reset_config_uses_factory_defaults(temp_db):
+    """Test reset-config ignores previously customized setup defaults."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "default_language": "python",
+            "snippets": {
+                "max_number": 42,
+                "code_language": "python",
+            },
+        },
+    )
+
+    args = MagicMock()
+    args.yes = True
+    args.load_defaults = False
+    args.enable_encryption = False
+    args.reset_config = True
+
+    cli.cmd_setup(args)
+
+    saved = cpkb_config.load_config(db.APP_DIR)
+    assert saved["default_language"] == "cpp"
+    assert saved["snippets"]["max_number"] == 9999
 
 
 def test_cmd_tui_missing_textual_reports_active_python(capsys):
@@ -227,6 +279,121 @@ def test_generate_id_respects_configured_max_snippets(temp_db):
     cursor = temp_db.cursor()
     sid = db.add_snippet(cursor, temp_db, "Repo Test", "desc", "use", "t1", "code")
     assert sid == "CP01"
+
+
+def test_generate_id_uses_configured_id_format(temp_db):
+    """Test configured ID formats can use custom prefixes and widths."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "max_number": 9999,
+                "default_id_format": "algorithm",
+                "id_formats": {
+                    "default": {"prefix": "CP", "width": "auto"},
+                    "algorithm": {"prefix": "ALG-", "width": 3},
+                    "template": {"prefix": "TPL-", "width": 2},
+                },
+            },
+            "backups": {"max_backups": 25},
+        },
+    )
+    cursor = temp_db.cursor()
+    first = db.add_snippet(cursor, temp_db, "Algo", "desc", "use", "t1", "code")
+    second = db.add_snippet(cursor, temp_db, "Template", "desc", "use", "t1", "code", "template")
+
+    assert first == "ALG-001"
+    assert second == "TPL-01"
+
+
+def test_cmd_add_accepts_id_format(temp_db):
+    """Test CLI add can select a configured ID format."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "max_number": 9999,
+                "id_formats": {
+                    "default": {"prefix": "CP", "width": "auto"},
+                    "note": {"prefix": "NOTE-", "width": 2},
+                },
+            },
+            "backups": {"max_backups": 25},
+        },
+    )
+    args = MagicMock()
+    args.id_format = "note"
+    with patch("builtins.input", side_effect=["Note", "Desc", "Use", "tag"]), \
+         patch("sys.stdin.readlines", return_value=["code"]):
+        cli.cmd_add(args)
+
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT id FROM snippets WHERE title = ?", ("Note",))
+    assert cursor.fetchone()[0] == "NOTE-01"
+
+
+def test_cmd_add_merges_default_tags(temp_db):
+    """Test configured default tags are added to new snippets."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "max_number": 9999,
+                "default_tags": "cp, graph",
+            },
+            "backups": {"max_backups": 25},
+        },
+    )
+    args = MagicMock()
+    with patch("builtins.input", side_effect=["Tagged", "Desc", "Use", "graph, shortest-path"]), \
+         patch("sys.stdin.readlines", return_value=["code"]):
+        cli.cmd_add(args)
+
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT tags FROM snippets WHERE title = ?", ("Tagged",))
+    assert cursor.fetchone()[0] == "cp, graph, shortest-path"
+
+
+def test_cmd_edit_uses_configured_editor(temp_db):
+    """Test edit command honors editor.command from config.json."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "editor": {"command": "true"},
+            "snippets": {"max_number": 9999},
+        },
+    )
+    cursor = temp_db.cursor()
+    snippet_id = db.add_snippet(cursor, temp_db, "Editable", "desc", "use", "tag", "code")
+
+    args = MagicMock()
+    args.id = snippet_id
+    with patch("cpkb.cli.subprocess.call") as mock_call:
+        cli.cmd_edit(args)
+
+    assert mock_call.call_args.args[0][0] == "true"
+
+
+def test_cmd_export_uses_configured_code_language(temp_db):
+    """Test markdown export uses configured fenced code language."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "max_number": 9999,
+                "code_language": "python",
+            },
+            "backups": {"max_backups": 25},
+        },
+    )
+    cursor = temp_db.cursor()
+    db.add_snippet(cursor, temp_db, "ExportLang", "desc", "use", "tag", "print(1)")
+
+    cli.cmd_export(MagicMock())
+
+    exports = list((db.APP_DIR / "exports").glob("snippets_*.md"))
+    assert len(exports) == 1
+    assert "```python" in exports[0].read_text(encoding="utf-8")
 
 
 def test_backup_retention_uses_config(temp_db):

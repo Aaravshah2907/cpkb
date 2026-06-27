@@ -14,6 +14,7 @@ import random as rnd
 import shutil
 import sqlite3
 import importlib.util
+import shlex
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -97,6 +98,33 @@ def _as_int(value: str, default: int, minimum: int = 0) -> int:
         return default
 
 
+def _merge_tags(*tag_groups: str) -> str:
+    """Return comma-separated tags with duplicates removed, preserving order."""
+    tags = []
+    seen = set()
+    for group in tag_groups:
+        for tag in [t.strip() for t in (group or "").split(",") if t.strip()]:
+            key = tag.lower()
+            if key not in seen:
+                seen.add(key)
+                tags.append(tag)
+    return ", ".join(tags)
+
+
+def _configured_code_language() -> str:
+    config = load_config(APP_DIR)
+    language = config.get("snippets", {}).get("code_language")
+    return str(language or config.get("default_language", "cpp"))
+
+
+def _configured_editor_command() -> list[str]:
+    config = load_config(APP_DIR)
+    configured = str(config.get("editor", {}).get("command") or "").strip()
+    if configured:
+        return shlex.split(configured)
+    return [os.environ.get("EDITOR", "nano")]
+
+
 def _print_setup_tool_notes() -> None:
     system = platform.system().lower()
     if system == "darwin":
@@ -111,7 +139,7 @@ def _print_setup_tool_notes() -> None:
 
 def cmd_setup(args: argparse.Namespace) -> None:
     """Initialize CPKB app directories and config from the installed CLI."""
-    config = load_config(APP_DIR)
+    config = DEFAULT_CONFIG if args.reset_config else load_config(APP_DIR)
 
     if args.yes:
         default_language = config.get("default_language", DEFAULT_CONFIG["default_language"])
@@ -159,7 +187,9 @@ def cmd_setup(args: argparse.Namespace) -> None:
             "accent_color": accent_color,
         },
         "snippets": {
+            **DEFAULT_CONFIG["snippets"],
             "max_number": _as_int(max_snippets_value, 9999, 1),
+            "code_language": default_language,
         },
         "backups": {
             "max_backups": _as_int(max_backups_value, 25, 0),
@@ -182,12 +212,13 @@ def cmd_setup(args: argparse.Namespace) -> None:
             source = None
             format = None
             encrypted = False
-            regenerate_ids = False
+            regenerate_ids = True
 
         cmd_import(ImportDefaultsArgs())
 
     print("\nCPKB setup complete.")
     print(f"Config written to: {config_path}")
+    print(f"Database preserved at: {DB_PATH}")
     print(f"Active Python: {sys.executable}")
     _print_setup_tool_notes()
 
@@ -345,13 +376,15 @@ def cmd_decrypt_db(args: argparse.Namespace) -> None:
 def cmd_add(args: argparse.Namespace) -> None:
     conn = init_db()
     cursor = conn.cursor()
+    config = load_config(APP_DIR)
+    default_tags = str(config.get("snippets", {}).get("default_tags") or "")
 
     print("Adding a new snippet...")
     try:
         title = input("Title: ").strip()
         description = input("Description: ").strip()
         use_case = input("Use case: ").strip()
-        tags = input("Tags (comma separated): ").strip()
+        tags = _merge_tags(default_tags, input("Tags (comma separated): ").strip())
 
         print("Enter the code (Ctrl+D on an empty line to finish):")
         lines = sys.stdin.readlines()
@@ -364,7 +397,10 @@ def cmd_add(args: argparse.Namespace) -> None:
         print("Error: Title and code are required.", file=sys.stderr)
         sys.exit(1)
 
-    snippet_id = add_snippet(cursor, conn, title, description, use_case, tags, code)
+    id_format = getattr(args, "id_format", None)
+    if not isinstance(id_format, str):
+        id_format = None
+    snippet_id = add_snippet(cursor, conn, title, description, use_case, tags, code, id_format)
     print(f"\nSnippet added successfully! ID: {snippet_id}")
 
 
@@ -389,8 +425,8 @@ def cmd_edit(args: argparse.Namespace) -> None:
         tf.write(code)
         temp_path = tf.name
 
-    editor = os.environ.get('EDITOR', 'nano')
-    subprocess.call([editor, temp_path])
+    editor_cmd = _configured_editor_command()
+    subprocess.call([*editor_cmd, temp_path])
 
     with open(temp_path, 'r') as tf:
         content = tf.read()
@@ -856,7 +892,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
 
 def cmd_export(args: argparse.Namespace) -> None:
     """Export all snippets to a markdown file."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     conn = init_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM snippets ORDER BY created_at")
@@ -866,21 +902,22 @@ def cmd_export(args: argparse.Namespace) -> None:
         return
     export_dir = APP_DIR / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
-    out_path = export_dir / f'snippets_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.md'
+    out_path = export_dir / f'snippets_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.md'
+    code_language = _configured_code_language()
     with open(out_path, 'w') as f:
         for row in rows:
             f.write(f"## {row[1]} ({row[0]})\n")
             f.write(f"**Description:** {row[2] or ''}\n")
             f.write(f"**Use case:** {row[3] or ''}\n")
             f.write(f"**Tags:** {row[4] or ''}\n")
-            f.write("\n```\n" + row[5] + "\n```\n\n")
+            f.write(f"\n```{code_language}\n" + row[5] + "\n```\n\n")
     print(f"Exported {len(rows)} snippets to {out_path}")
 
 
 def cmd_export_json(args: argparse.Namespace) -> None:
     """Export snippets to JSON file."""
     import json
-    from datetime import datetime
+    from datetime import datetime, timezone
     conn = init_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM snippets ORDER BY created_at")
@@ -893,7 +930,7 @@ def cmd_export_json(args: argparse.Namespace) -> None:
     ]
     export_dir = APP_DIR / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
-    out_path = export_dir / f'snippets_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json'
+    out_path = export_dir / f'snippets_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.json'
     with open(out_path, 'w') as f:
         json.dump(data, f, indent=2)
     print(f"Exported {len(data)} snippets to {out_path}")
@@ -901,14 +938,14 @@ def cmd_export_json(args: argparse.Namespace) -> None:
 
 def cmd_export_html(args: argparse.Namespace) -> None:
     """Export snippets to an HTML file."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     conn = init_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM snippets ORDER BY created_at")
     rows = cursor.fetchall()
     export_dir = APP_DIR / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
-    out_path = export_dir / f'snippets_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.html'
+    out_path = export_dir / f'snippets_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.html'
     with open(out_path, 'w') as f:
         f.write("<html><head><meta charset='utf-8'><title>CPKB Export</title></head><body>")
         for row in rows:
@@ -1236,6 +1273,10 @@ def main() -> None:
 
     # V1 Commands
     parser_add = subparsers.add_parser("add", help="Add a new snippet")
+    parser_add.add_argument(
+        "--id-format",
+        help="Configured ID format name from config.json snippets.id_formats",
+    )
     parser_add.set_defaults(func=cmd_add)
 
     parser_list = subparsers.add_parser("list", help="List all snippets")
@@ -1323,6 +1364,7 @@ def main() -> None:
 
     parser_setup = subparsers.add_parser("setup", help="Set up CPKB directories, config, and optional defaults")
     parser_setup.add_argument("-y", "--yes", action="store_true", help="Accept current/default config values without prompts")
+    parser_setup.add_argument("--reset-config", action="store_true", help="Use factory config defaults during setup without deleting snippets")
     parser_setup.add_argument("--load-defaults", action="store_true", help="Import bundled C++ STL cheatsheets")
     parser_setup.add_argument("--enable-encryption", action="store_true", help="Enable encryption commands in config")
     parser_setup.set_defaults(func=cmd_setup)

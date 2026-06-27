@@ -13,12 +13,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "config_version": 1,
     "app_version": __version__,
     "default_language": "cpp",
+    "editor": {
+        "command": "",
+    },
     "display": {
         "theme": "textual-dark",
         "accent_color": "cyan",
+        "left_pane_width": 35,
     },
     "snippets": {
         "max_number": 9999,
+        "code_language": "cpp",
+        "default_tags": "",
+        "default_id_format": "default",
+        "id_formats": {
+            "default": {
+                "prefix": "CP",
+                "width": "auto",
+            },
+        },
     },
     "backups": {
         "max_backups": 25,

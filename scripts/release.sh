@@ -112,6 +112,9 @@ info "Pushing to origin ..."
 git push origin main --tags
 success "Pushed commit and tag v$NEW_VERSION"
 
+info "Waiting 2 minutes for package indexes and release backends to reflect the new tag ..."
+sleep 120
+
 # ── Step 5: Compute SHA256 from GitHub archive ──────────────────────────────────
 
 info "Downloading GitHub archive tarball for SHA256 ..."
