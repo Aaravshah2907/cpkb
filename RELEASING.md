@@ -1,8 +1,36 @@
 # Releasing CPKB
 
-This project is set up for PyPI trusted publishing and a Homebrew formula.
+## Quick Release (Recommended)
 
-## PyPI
+Run the automated release script from the repository root:
+
+```bash
+./scripts/release.sh <new-version>
+```
+
+Example:
+
+```bash
+./scripts/release.sh 2.0.5
+```
+
+The script handles everything end-to-end:
+
+1. Bumps the version in `pyproject.toml`, `src/cpkb/__init__.py`, and `setup.sh`
+2. Runs the test suite
+3. Builds the sdist and wheel
+4. Commits, tags (`v<version>`), and pushes to origin
+5. Downloads the GitHub archive tarball and computes its SHA256
+6. Updates `Formula/cpkb.rb` in this repo and pushes
+7. Syncs the homebrew tap at `$(brew --repository)/Library/Taps/aaravshah2907/homebrew-cpkb` and pushes
+
+PyPI publishing is handled automatically by the `Publish` GitHub Actions workflow on tag push.
+
+---
+
+## Manual Release
+
+### PyPI
 
 1. Create the project on PyPI as `cpkb`.
 2. Configure trusted publishing for this repository and the `pypi` GitHub Actions environment.
@@ -19,13 +47,13 @@ This project is set up for PyPI trusted publishing and a Homebrew formula.
 5. Commit, tag, and push:
 
    ```bash
-   git tag v2.0.3
+   git tag v<version>
    git push origin main --tags
    ```
 
 The `Publish` workflow builds the source distribution and wheel, then publishes to PyPI.
 
-## Homebrew
+### Homebrew
 
 The formula in `Formula/cpkb.rb` points at the GitHub release source distribution and uses a real SHA256 checksum. Homebrew 6 requires formula developer commands to run against a tap, not an arbitrary path.
 
@@ -42,11 +70,11 @@ The formula in `Formula/cpkb.rb` points at the GitHub release source distributio
    brew trust --formula Aaravshah2907/cpkb/cpkb
    ```
 
-3. Build the source distribution, upload it to the GitHub release as `cpkb-2.0.3.tar.gz`, and verify the formula's main `sha256` with that exact artifact:
+3. Build the source distribution, upload it to the GitHub release as `cpkb-<version>.tar.gz`, and verify the formula's main `sha256` with that exact artifact:
 
    ```bash
    python3 -m build --sdist --no-isolation
-   shasum -a 256 dist/cpkb-2.0.3.tar.gz
+   shasum -a 256 dist/cpkb-<version>.tar.gz
    ```
 
 4. Verify the Homebrew package:
