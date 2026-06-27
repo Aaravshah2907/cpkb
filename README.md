@@ -18,41 +18,64 @@ CPKB is a local, terminal-first knowledge base designed to store, search, and tr
 
 ## Installation
 
-Install CPKB with `pipx`:
+The recommended install method is `pipx`:
 
 ```bash
 pipx install cpkb
 ```
 
-Or install it with `pip`:
+You can also install it with `pip`:
 
 ```bash
 python -m pip install cpkb
 ```
 
-Encryption commands are optional. Install the encryption extra if you want `encrypt-db`, `decrypt-db`, encrypted exports, or encrypted imports:
+### Homebrew
+
+macOS and Linux users can install CPKB from the Homebrew tap:
+
+```bash
+brew tap Aaravshah2907/cpkb
+brew trust --formula Aaravshah2907/cpkb/cpkb
+brew install cpkb
+```
+
+The Homebrew package installs the lightweight core app and avoids the optional encryption dependency so installs stay fast.
+
+### Optional Encryption
+
+Encryption support is opt-in because it depends on `cryptography`, which can make source-based package manager installs much heavier.
+
+For encryption support, install with the `encrypt` extra:
 
 ```bash
 pipx install "cpkb[encrypt]"
 ```
 
-### Homebrew
-
-After the first release is published, macOS and Linux users can install from the project tap:
+Then enable encryption in your CPKB config:
 
 ```bash
-brew tap Aaravshah2907/cpkb
-brew install cpkb
+cpkb config
 ```
 
-Until the tap is live, the formula template lives in `Formula/cpkb.rb`.
+Open the printed `config.json` path and set:
+
+```json
+{
+  "encryption": {
+    "enabled": true
+  }
+}
+```
+
+If encryption is disabled or the extra is not installed, encrypted commands print the install/config steps instead of failing with a Python traceback.
 
 ### From Source
 
 ```bash
 git clone https://github.com/Aaravshah2907/cpkb.git
 cd cpkb
-pip install -e .
+python -m pip install -e .
 ```
 
 ### Local Development & Testing
@@ -78,6 +101,12 @@ pytest
 | macOS    | `pbcopy` (built‑in) | `brew install fzf`                         |
 | Linux    | `xclip` or `xsel`   | `sudo apt-get install fzf`                 |
 | Windows  | `clip` (built‑in)   | `scoop install fzf` or `choco install fzf` |
+
+## Optional Integrations
+
+CPKB includes an optional SketchyBar integration for macOS. It adds a menu bar item that opens a snippet search dialog and copies the selected snippet.
+
+See [integrations/sketchybar](integrations/sketchybar) for the plugin script and `sketchybarrc` snippet.
 
 ## Usage
 
