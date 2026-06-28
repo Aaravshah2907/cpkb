@@ -1,3 +1,5 @@
+import re as _re
+
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown, Input, Button, TextArea, Select
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -26,6 +28,17 @@ ACCENT_COLORS = {
     "purple": "#bd93f9",
     "red": "#ff5555",
 }
+
+
+def _sanitize_css_id(raw: str) -> str:
+    """Turn an arbitrary snippet ID into a valid CSS identifier fragment.
+
+    Textual widget IDs must be valid CSS identifiers.  Characters like
+    dots, spaces, ``@``, etc. are replaced with underscores so that IDs
+    such as ``ALG.000001`` become ``ALG_000001``.
+    """
+    return _re.sub(r"[^A-Za-z0-9_-]", "_", raw)
+
 
 
 MODAL_BASE_CSS = """
@@ -367,11 +380,12 @@ class SettingsModal(ModalScreen[dict]):
             yield Label("Format Colors:")
             for fmt_name, fmt_cfg in self._id_formats.items():
                 current_color = fmt_cfg.get("color", "cyan")
+                safe_name = _sanitize_css_id(fmt_name)
                 yield Select(
                     [(name.title(), name) for name in ACCENT_COLORS],
                     value=current_color,
                     allow_blank=False,
-                    id=f"fmt-color-{fmt_name}",
+                    id=f"fmt-color-{safe_name}",
                     prompt=f"{fmt_name} color",
                 )
             with Horizontal(classes="modal-actions"):
@@ -382,7 +396,8 @@ class SettingsModal(ModalScreen[dict]):
         if event.button.id == "apply-btn":
             format_colors = {}
             for fmt_name in self._id_formats:
-                format_colors[fmt_name] = str(self.query_one(f"#fmt-color-{fmt_name}", Select).value)
+                safe_name = _sanitize_css_id(fmt_name)
+                format_colors[fmt_name] = str(self.query_one(f"#fmt-color-{safe_name}", Select).value)
             
             self.dismiss({
                 "theme": str(self.query_one("#theme-select", Select).value),
@@ -598,6 +613,7 @@ class SnippetApp(App):
     async def on_mount(self) -> None:
         self.conn = init_db()
         self.cursor = self.conn.cursor()
+        self._widget_id_to_snippet: dict[str, str] = {}  # sanitized widget-id -> real snippet id
         theme, accent = self._load_display_config()
         self._apply_display_config(theme, accent)
         self.watch_left_pane_width(self.left_pane_width)
@@ -676,14 +692,17 @@ class SnippetApp(App):
             self.cursor.execute("SELECT id, title FROM snippets ORDER BY created_at DESC")
             rows = self.cursor.fetchall()
 
+        self._widget_id_to_snippet = {}
         for row in rows:
             snippet_id = row[0]
+            widget_id = f"item_{_sanitize_css_id(snippet_id)}"
+            self._widget_id_to_snippet[widget_id] = snippet_id
             color = self._get_format_color(snippet_id)
             if color in ACCENT_COLORS:
                 color_hex = ACCENT_COLORS[color]
             else:
                 color_hex = color
-            list_view.append(ListItem(Label(f"[{color_hex}]{row[0]}[/] - {row[1]}"), id=f"item_{row[0]}"))
+            list_view.append(ListItem(Label(f"[{color_hex}]{row[0]}[/] - {row[1]}"), id=widget_id))
 
         if rows:
             list_view.index = 0
@@ -698,8 +717,8 @@ class SnippetApp(App):
         """Copy the code of the currently selected snippet to the clipboard."""
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
-            snippet_id = list_view.highlighted_child.id.replace("item_", "")
-            row = get_snippet_fields(self.cursor, snippet_id, "code")
+            snippet_id = self._widget_id_to_snippet.get(list_view.highlighted_child.id, "")
+            row = get_snippet_fields(self.cursor, snippet_id, "code") if snippet_id else None
             if row:
                 self.copy_to_clipboard(row[0])
                 self.notify(f"Code for {snippet_id} copied to clipboard!", title="Copied!")
@@ -711,7 +730,9 @@ class SnippetApp(App):
     async def action_edit_snippet(self) -> None:
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
-            snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            snippet_id = self._widget_id_to_snippet.get(list_view.highlighted_child.id, "")
+            if not snippet_id:
+                return
             row = get_snippet_fields(self.cursor, snippet_id)
             if not row:
                 self.notify(f"Snippet {snippet_id} not found", severity="error")
@@ -747,7 +768,9 @@ class SnippetApp(App):
     async def action_delete_snippet(self) -> None:
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
-            snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            snippet_id = self._widget_id_to_snippet.get(list_view.highlighted_child.id, "")
+            if not snippet_id:
+                return
             row = get_snippet_fields(self.cursor, snippet_id, "id, title")
             if not row:
                 self.notify(f"Snippet {snippet_id} not found", severity="error")
@@ -768,7 +791,9 @@ class SnippetApp(App):
     async def action_edit_tags(self) -> None:
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
-            snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            snippet_id = self._widget_id_to_snippet.get(list_view.highlighted_child.id, "")
+            if not snippet_id:
+                return
             row = get_snippet_fields(self.cursor, snippet_id, "tags")
             current_tags = row[0] if row and row[0] else ""
 
@@ -818,7 +843,9 @@ class SnippetApp(App):
     async def action_use_snippet(self) -> None:
         list_view = self.query_one("#snippet-list", ListView)
         if list_view.highlighted_child and list_view.highlighted_child.id:
-            snippet_id = list_view.highlighted_child.id.replace("item_", "")
+            snippet_id = self._widget_id_to_snippet.get(list_view.highlighted_child.id, "")
+            if not snippet_id:
+                return
 
             def check_result(result: dict | None) -> None:
                 if result:
@@ -836,7 +863,9 @@ class SnippetApp(App):
         if not event.item.id:
             return
 
-        snippet_id = event.item.id.replace("item_", "")
+        snippet_id = self._widget_id_to_snippet.get(event.item.id, "")
+        if not snippet_id:
+            return
         row = get_snippet_fields(self.cursor, snippet_id)
 
         if row:
