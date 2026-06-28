@@ -18,6 +18,10 @@ import shlex
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
+import urllib.request
+import threading
+import time
+import json
 
 from .db import (
     init_db, backup_db, generate_id, update_tags,
@@ -1524,7 +1528,65 @@ def main() -> None:
     parser_srs_stats.set_defaults(func=cmd_srs_stats)
 
     args = parser.parse_args()
-    args.func(args)
+    
+    # Start background update check
+    update_thread = check_for_updates_background()
+    
+    try:
+        args.func(args)
+    finally:
+        # Print update notice if it's not the TUI (TUI would mess up stdout)
+        if args.func.__name__ != "cmd_tui":
+            print_update_notice()
+
+
+def check_for_updates_background() -> threading.Thread:
+    """Check PyPI for updates in a background thread once every 24 hours."""
+    def _check():
+        try:
+            check_file = APP_DIR / "update_check.json"
+            now = time.time()
+            if check_file.exists():
+                try:
+                    data = json.loads(check_file.read_text())
+                    if now - data.get("last_checked", 0) < 86400:
+                        return
+                except Exception:
+                    pass
+            
+            req = urllib.request.Request(
+                "https://pypi.org/pypi/cpkb/json",
+                headers={"User-Agent": f"cpkb/{__version__}"}
+            )
+            with urllib.request.urlopen(req, timeout=2) as response:
+                pypi_data = json.loads(response.read().decode())
+                latest_version = pypi_data["info"]["version"]
+                
+                check_file.write_text(json.dumps({
+                    "last_checked": now,
+                    "latest_version": latest_version if latest_version != __version__ else None,
+                    "current_version": __version__
+                }))
+        except Exception:
+            pass
+            
+    t = threading.Thread(target=_check, daemon=True)
+    t.start()
+    return t
+
+
+def print_update_notice() -> None:
+    """Print an upgrade prompt if a newer version was found."""
+    check_file = APP_DIR / "update_check.json"
+    if check_file.exists():
+        try:
+            data = json.loads(check_file.read_text())
+            latest = data.get("latest_version")
+            if latest and latest != __version__:
+                print(f"\n\033[33mUpdate available: {__version__} -> {latest}\033[0m")
+                print("Run 'pip install --upgrade cpkb' or 'brew upgrade cpkb' to update.")
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

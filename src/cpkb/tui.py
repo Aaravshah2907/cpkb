@@ -1,7 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown, Input, Button, TextArea, Select
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.reactive import reactive
 from textual.theme import Theme
@@ -325,12 +324,14 @@ class SettingsModal(ModalScreen[dict]):
     }
     """
 
-    def __init__(self, themes: list[str], current_theme: str, current_accent: str, id_formats: dict) -> None:
+    def __init__(self, themes: list[str], current_theme: str, current_accent: str, id_formats: dict, layout: str = "horizontal", border_style: str = "solid") -> None:
         super().__init__()
         self._themes = themes
         self._current_theme = current_theme
         self._current_accent = current_accent
         self._id_formats = id_formats
+        self._layout = layout
+        self._border_style = border_style
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-dialog", classes="modal-dialog modal-compact"):
@@ -348,6 +349,20 @@ class SettingsModal(ModalScreen[dict]):
                 value=self._current_accent,
                 allow_blank=False,
                 id="accent-select",
+            )
+            yield Label("Layout:")
+            yield Select(
+                [("Horizontal", "horizontal"), ("Vertical", "vertical")],
+                value=self._layout,
+                allow_blank=False,
+                id="layout-select",
+            )
+            yield Label("Border Style:")
+            yield Select(
+                [(b.title(), b) for b in ["solid", "heavy", "rounded", "double"]],
+                value=self._border_style,
+                allow_blank=False,
+                id="border-select",
             )
             yield Label("Format Colors:")
             for fmt_name, fmt_cfg in self._id_formats.items():
@@ -372,6 +387,8 @@ class SettingsModal(ModalScreen[dict]):
             self.dismiss({
                 "theme": str(self.query_one("#theme-select", Select).value),
                 "accent_color": str(self.query_one("#accent-select", Select).value),
+                "layout": str(self.query_one("#layout-select", Select).value),
+                "border_style": str(self.query_one("#border-select", Select).value),
                 "format_colors": format_colors,
             })
         else:
@@ -404,28 +421,31 @@ class SnippetApp(App):
 
     left_pane_width: reactive[int] = reactive(35)
 
-    BINDINGS = [
-        Binding("ctrl+q", "quit", "Quit"),
-        Binding("ctrl+r", "refresh", "Refresh List"),
-        Binding("ctrl+c", "copy_snippet", "Copy Code"),
-        Binding("/", "focus_search", "Search"),
-        Binding("ctrl+a", "add_snippet", "Add"),
-        Binding("ctrl+e", "edit_snippet", "Edit"),
-        Binding("ctrl+u", "use_snippet", "Use"),
-        Binding("ctrl+d", "delete_snippet", "Delete"),
-        Binding("ctrl+t", "edit_tags", "Edit Tags"),
-        Binding("ctrl+comma", "settings", "Settings"),
-        Binding("j", "scroll_detail_down", "Detail Down", show=False),
-        Binding("k", "scroll_detail_up", "Detail Up", show=False),
-        Binding("pagedown", "page_detail_down", "Detail Page Down", show=False),
-        Binding("pageup", "page_detail_up", "Detail Page Up", show=False),
-        Binding("left_square_bracket", "shrink_left", "Shrink Left", show=False),
-        Binding("right_square_bracket", "grow_left", "Grow Left", show=False),
+    _DEFAULT_BINDINGS = [
+        ("quit", "ctrl+q", "Quit", True),
+        ("refresh", "ctrl+r", "Refresh List", True),
+        ("copy_snippet", "ctrl+c", "Copy Code", True),
+        ("focus_search", "/", "Search", True),
+        ("add_snippet", "ctrl+a", "Add", True),
+        ("edit_snippet", "ctrl+e", "Edit", True),
+        ("use_snippet", "ctrl+u", "Use", True),
+        ("delete_snippet", "ctrl+d", "Delete", True),
+        ("edit_tags", "ctrl+t", "Edit Tags", True),
+        ("settings", "ctrl+comma", "Settings", True),
+        ("scroll_detail_down", "j", "Detail Down", False),
+        ("scroll_detail_up", "k", "Detail Up", False),
+        ("page_detail_down", "pagedown", "Detail Page Down", False),
+        ("page_detail_up", "pageup", "Detail Page Up", False),
+        ("shrink_left", "left_square_bracket", "Shrink Left", False),
+        ("grow_left", "right_square_bracket", "Grow Left", False),
     ]
+
+    BINDINGS = []
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Horizontal():
+        # the container class will be updated in _apply_display_config using CSS, so we just use Horizontal here
+        with Horizontal(id="main-container"):
             with Vertical(id="left-pane"):
                 yield Input(placeholder="Search snippets (/)", id="search-input")
                 yield ListView(id="snippet-list")
@@ -442,6 +462,9 @@ class SnippetApp(App):
             pane_width = int(display.get("left_pane_width", DEFAULT_CONFIG["display"]["left_pane_width"]))
         except (TypeError, ValueError):
             pane_width = DEFAULT_CONFIG["display"]["left_pane_width"]
+        self.layout_dir = str(display.get("layout", DEFAULT_CONFIG["display"]["layout"]))
+        self.border_style = str(display.get("border_style", DEFAULT_CONFIG["display"]["border_style"]))
+        
         self.left_pane_width = max(
             15,
             min(70, pane_width),
@@ -499,20 +522,52 @@ class SnippetApp(App):
         self.theme = custom_theme.name
         self.display_theme = theme
         self.display_accent = accent
+        
+        # update layout styles dynamically
+        try:
+            main_container = self.query_one("#main-container")
+            left_pane = self.query_one("#left-pane")
+            right_pane = self.query_one("#right-pane")
+            
+            if self.layout_dir == "vertical":
+                main_container.styles.layout = "vertical"
+                left_pane.styles.width = "100%"
+                left_pane.styles.height = f"{self.left_pane_width}%"
+                left_pane.styles.border_right = "none"
+                left_pane.styles.border_bottom = (self.border_style, custom_theme.primary)
+                right_pane.styles.width = "100%"
+                right_pane.styles.height = f"{100 - self.left_pane_width}%"
+            else:
+                main_container.styles.layout = "horizontal"
+                left_pane.styles.height = "100%"
+                left_pane.styles.width = f"{self.left_pane_width}%"
+                left_pane.styles.border_bottom = "none"
+                left_pane.styles.border_right = (self.border_style, custom_theme.primary)
+                right_pane.styles.height = "100%"
+                right_pane.styles.width = f"{100 - self.left_pane_width}%"
+        except Exception:
+            pass # before mount
+            
         return theme, accent
 
-    def _save_display_config(self, theme: str, accent: str) -> None:
+    def _save_display_config(self, theme: str, accent: str, layout: str = "horizontal", border_style: str = "solid") -> None:
         config = load_config(APP_DIR)
         display = config.setdefault("display", {})
         display["theme"] = theme
         display["accent_color"] = accent
+        display["layout"] = layout
+        display["border_style"] = border_style
         save_config(APP_DIR, config)
 
     def watch_left_pane_width(self, value: int) -> None:
-        """Update pane widths when the reactive property changes."""
+        """Update pane widths/heights when the reactive property changes."""
         try:
-            self.query_one("#left-pane").styles.width = f"{value}%"
-            self.query_one("#right-pane").styles.width = f"{100 - value}%"
+            if self.layout_dir == "vertical":
+                self.query_one("#left-pane").styles.height = f"{value}%"
+                self.query_one("#right-pane").styles.height = f"{100 - value}%"
+            else:
+                self.query_one("#left-pane").styles.width = f"{value}%"
+                self.query_one("#right-pane").styles.width = f"{100 - value}%"
         except Exception:
             pass  # widgets not yet mounted
 
@@ -546,6 +601,14 @@ class SnippetApp(App):
         theme, accent = self._load_display_config()
         self._apply_display_config(theme, accent)
         self.watch_left_pane_width(self.left_pane_width)
+        
+        # Load custom keybindings
+        config = load_config(APP_DIR)
+        kb = config.get("keybindings", DEFAULT_CONFIG["keybindings"])
+        for action, default_key, desc, show in self._DEFAULT_BINDINGS:
+            key = kb.get(action, default_key)
+            self.bind(key, action, description=desc, show=show)
+            
         await self.action_refresh()
 
     def action_focus_search(self) -> None:
@@ -564,8 +627,10 @@ class SnippetApp(App):
 
         def check_result(result: dict | None) -> None:
             if result:
+                self.layout_dir = result["layout"]
+                self.border_style = result["border_style"]
                 theme, accent = self._apply_display_config(result["theme"], result["accent_color"])
-                self._save_display_config(theme, accent)
+                self._save_display_config(theme, accent, result["layout"], result["border_style"])
                 
                 # Save format colors
                 config = load_config(APP_DIR)
@@ -581,7 +646,7 @@ class SnippetApp(App):
                 self.notify("Display settings saved.")
 
         self.push_screen(
-            SettingsModal(themes, self.display_theme, self.display_accent, self.id_formats),
+            SettingsModal(themes, self.display_theme, self.display_accent, self.id_formats, self.layout_dir, self.border_style),
             check_result,
         )
 
