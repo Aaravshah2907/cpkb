@@ -82,6 +82,84 @@ def cmd_config(args: argparse.Namespace) -> None:
     print(json.dumps(load_config(APP_DIR), indent=2))
 
 
+def _id_formats(config: dict) -> dict:
+    return config.setdefault("snippets", {}).setdefault("id_formats", {})
+
+
+def cmd_id_format_list(args: argparse.Namespace) -> None:
+    """List configured snippet ID formats."""
+    init_db()
+    config = load_config(APP_DIR)
+    snippets_config = config.get("snippets", {})
+    formats = snippets_config.get("id_formats", {})
+    default_format = str(snippets_config.get("default_id_format", "default"))
+
+    if not formats:
+        print("No ID formats configured.")
+        return
+
+    print(f"{'Name':<18} {'Pattern':<24} Default")
+    print("-" * 52)
+    for name in sorted(formats):
+        fmt = formats[name]
+        marker = "*" if name == default_format else ""
+        pattern = fmt.get("pattern")
+        if not pattern:
+            width = fmt.get("width", "auto")
+            if width == "auto":
+                digits = "#" * len(str(max(1, int(snippets_config.get("max_number", 9999)))))
+            else:
+                digits = "#" * int(width)
+            pattern = f"{fmt.get('prefix', 'CP')}{digits}"
+        print(f"{name:<18} {str(pattern):<24} {marker}")
+    print("\nPattern guide: <ID_BEG_KEY><_.-@><#######>")
+    print("Examples: NOTE-###, ALG_####, ID@#######")
+
+
+def cmd_id_format_add(args: argparse.Namespace) -> None:
+    """Add or update an ID format in config.json."""
+    init_db()
+    config = load_config(APP_DIR)
+    formats = _id_formats(config)
+    pattern = _optional_str_arg(args, "pattern")
+    prefix = _optional_str_arg(args, "prefix")
+    if pattern:
+        if "#" not in pattern:
+            print("Error: --pattern must include at least one # placeholder.", file=sys.stderr)
+            return
+        formats[args.name] = {"pattern": pattern}
+    else:
+        if not prefix:
+            print("Error: provide --pattern or --prefix.", file=sys.stderr)
+            return
+        formats[args.name] = {
+            "prefix": prefix,
+            "width": "auto" if args.width == "auto" else max(1, int(args.width)),
+        }
+    if args.default:
+        config.setdefault("snippets", {})["default_id_format"] = args.name
+
+    path = save_config(APP_DIR, config)
+    print(f"Saved ID format '{args.name}' to {path}")
+    if args.default:
+        print(f"Default ID format set to '{args.name}'.")
+
+
+def cmd_id_format_default(args: argparse.Namespace) -> None:
+    """Set the default ID format used by add/import."""
+    init_db()
+    config = load_config(APP_DIR)
+    formats = _id_formats(config)
+    if args.name not in formats:
+        available = ", ".join(sorted(formats)) or "none"
+        print(f"Error: Unknown ID format '{args.name}'. Available formats: {available}", file=sys.stderr)
+        return
+
+    config.setdefault("snippets", {})["default_id_format"] = args.name
+    path = save_config(APP_DIR, config)
+    print(f"Default ID format set to '{args.name}' in {path}")
+
+
 def _prompt_default(prompt: str, default: str) -> str:
     answer = input(f"{prompt} [{default}]: ").strip()
     return answer or default
@@ -98,6 +176,15 @@ def _as_int(value: str, default: int, minimum: int = 0) -> int:
         return default
 
 
+def _id_width(value: str) -> str | int:
+    if value == "auto":
+        return value
+    try:
+        return max(1, int(value))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("width must be 'auto' or a positive integer") from exc
+
+
 def _merge_tags(*tag_groups: str) -> str:
     """Return comma-separated tags with duplicates removed, preserving order."""
     tags = []
@@ -109,6 +196,11 @@ def _merge_tags(*tag_groups: str) -> str:
                 seen.add(key)
                 tags.append(tag)
     return ", ".join(tags)
+
+
+def _optional_str_arg(args: argparse.Namespace, name: str) -> str | None:
+    value = getattr(args, name, None)
+    return value if isinstance(value, str) and value else None
 
 
 def _configured_code_language() -> str:
@@ -213,6 +305,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
             format = None
             encrypted = False
             regenerate_ids = True
+            id_format = None
 
         cmd_import(ImportDefaultsArgs())
 
@@ -397,10 +490,12 @@ def cmd_add(args: argparse.Namespace) -> None:
         print("Error: Title and code are required.", file=sys.stderr)
         sys.exit(1)
 
-    id_format = getattr(args, "id_format", None)
-    if not isinstance(id_format, str):
-        id_format = None
-    snippet_id = add_snippet(cursor, conn, title, description, use_case, tags, code, id_format)
+    id_format = _optional_str_arg(args, "id_format")
+    try:
+        snippet_id = add_snippet(cursor, conn, title, description, use_case, tags, code, id_format)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"\nSnippet added successfully! ID: {snippet_id}")
 
 
@@ -1173,7 +1268,17 @@ def cmd_import(args: argparse.Namespace) -> None:
             print(f"Import failed: {exc}", file=sys.stderr)
             return
 
-    result = import_snippets(cursor, conn, snippets, preserve_ids=not args.regenerate_ids)
+    try:
+        result = import_snippets(
+            cursor,
+            conn,
+            snippets,
+            preserve_ids=not args.regenerate_ids,
+            id_format=_optional_str_arg(args, "id_format"),
+        )
+    except ValueError as exc:
+        print(f"Import failed: {exc}", file=sys.stderr)
+        return
     print(f"Imported {result['imported']} snippet(s); skipped {result['skipped']}.")
     collisions = sum(1 for old, new in result["id_map"].items() if old != new)
     if collisions:
@@ -1353,7 +1458,8 @@ def main() -> None:
     parser_import.add_argument("--encrypted", action="store_true", help="Decrypt source before importing")
     parser_import.add_argument("--defaults", action="store_true", help="Import bundled C++ STL cheatsheets")
     parser_import.add_argument("--list-defaults", action="store_true", help="Preview bundled cheatsheets")
-    parser_import.add_argument("--regenerate-ids", action="store_true", help="Generate new CP IDs instead of preserving source IDs")
+    parser_import.add_argument("--regenerate-ids", action="store_true", help="Generate new IDs instead of preserving source IDs")
+    parser_import.add_argument("--id-format", help="Configured ID format name to use with --regenerate-ids or collisions")
     parser_import.set_defaults(func=cmd_import)
 
     parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
@@ -1361,6 +1467,27 @@ def main() -> None:
 
     parser_config = subparsers.add_parser("config", help="Show active configuration")
     parser_config.set_defaults(func=cmd_config)
+
+    parser_id_format = subparsers.add_parser("id-format", help="Manage configured snippet ID formats")
+    id_format_subparsers = parser_id_format.add_subparsers(dest="id_format_command", required=True)
+
+    parser_id_format_list = id_format_subparsers.add_parser("list", help="List configured ID formats")
+    parser_id_format_list.set_defaults(func=cmd_id_format_list)
+
+    parser_id_format_add = id_format_subparsers.add_parser("add", help="Add or update an ID format")
+    parser_id_format_add.add_argument("name", help="Format name, e.g. note or algorithm")
+    parser_id_format_add.add_argument(
+        "--pattern",
+        help="ID pattern with # placeholders, e.g. NOTE-###, ALG_####, or ID@#######",
+    )
+    parser_id_format_add.add_argument("--prefix", help="Legacy ID prefix, e.g. NOTE-")
+    parser_id_format_add.add_argument("--width", type=_id_width, default="auto", help="'auto' or a positive integer")
+    parser_id_format_add.add_argument("--default", action="store_true", help="Also make this the default ID format")
+    parser_id_format_add.set_defaults(func=cmd_id_format_add)
+
+    parser_id_format_default = id_format_subparsers.add_parser("default", help="Set the default ID format")
+    parser_id_format_default.add_argument("name", help="Configured format name")
+    parser_id_format_default.set_defaults(func=cmd_id_format_default)
 
     parser_setup = subparsers.add_parser("setup", help="Set up CPKB directories, config, and optional defaults")
     parser_setup.add_argument("-y", "--yes", action="store_true", help="Accept current/default config values without prompts")

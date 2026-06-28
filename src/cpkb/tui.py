@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, ListView, ListItem, Label, Markdown, Input, Button, TextArea, Select
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.reactive import reactive
@@ -29,30 +29,58 @@ ACCENT_COLORS = {
 }
 
 
+MODAL_BASE_CSS = """
+.modal-dialog {
+    padding: 1 2;
+    width: 70;
+    max-width: 90%;
+    max-height: 90%;
+    border: thick $background 80%;
+    background: $surface;
+}
+.modal-dialog Label {
+    margin-top: 1;
+}
+.modal-title {
+    margin-top: 0;
+    text-style: bold;
+}
+.modal-body {
+    height: 1fr;
+    min-height: 8;
+}
+.modal-actions {
+    height: 3;
+    min-height: 3;
+    margin-top: 1;
+}
+.modal-actions Button {
+    margin-right: 1;
+}
+.modal-compact {
+    width: 60;
+    height: auto;
+    max-height: 85%;
+}
+.modal-wide {
+    width: 80;
+}
+"""
+
+
 # ---------------------------------------------------------------------------
 # Modal Screens
 # ---------------------------------------------------------------------------
 
 class AddSnippetModal(ModalScreen[dict]):
     """Modal for adding a new snippet with all metadata fields."""
-    CSS = """
+    CSS = MODAL_BASE_CSS + """
     AddSnippetModal {
         align: center middle;
     }
-    #add-dialog {
-        padding: 1 2;
-        width: 80;
-        height: 80%;
-        border: thick $background 80%;
-        background: $surface;
-        overflow-y: auto;
-    }
-    #add-dialog Label {
-        margin-top: 1;
-    }
     #add-dialog #code-input {
-        min-height: 10;
-        height: 1fr;
+        height: 12;
+        min-height: 8;
     }
     """
     def __init__(self, code_language: str = "python", default_tags: str = "") -> None:
@@ -61,19 +89,20 @@ class AddSnippetModal(ModalScreen[dict]):
         self._default_tags = default_tags
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="add-dialog"):
-            yield Label("➕ Add New Snippet", id="add-title")
-            yield Label("Title:")
-            yield Input(id="title-input")
-            yield Label("Description:")
-            yield Input(id="desc-input")
-            yield Label("Use Case:")
-            yield Input(id="use-input")
-            yield Label("Tags (comma separated):")
-            yield Input(value=self._default_tags, id="tags-input")
-            yield Label("Code:")
-            yield TextArea(id="code-input", language=self._code_language)
-            with Horizontal():
+        with Vertical(id="add-dialog", classes="modal-dialog modal-wide"):
+            yield Label("➕ Add New Snippet", id="add-title", classes="modal-title")
+            with VerticalScroll(id="add-form-body", classes="modal-body"):
+                yield Label("Title:")
+                yield Input(id="title-input")
+                yield Label("Description:")
+                yield Input(id="desc-input")
+                yield Label("Use Case:")
+                yield Input(id="use-input")
+                yield Label("Tags (comma separated):")
+                yield Input(value=self._default_tags, id="tags-input")
+                yield Label("Code:")
+                yield TextArea(id="code-input", language=self._code_language)
+            with Horizontal(classes="modal-actions"):
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
 
@@ -94,24 +123,13 @@ class AddSnippetModal(ModalScreen[dict]):
 
 class EditSnippetModal(ModalScreen[dict]):
     """Modal for editing an existing snippet, pre-filled with current values."""
-    CSS = """
+    CSS = MODAL_BASE_CSS + """
     EditSnippetModal {
         align: center middle;
     }
-    #edit-dialog {
-        padding: 1 2;
-        width: 80;
-        height: 80%;
-        border: thick $background 80%;
-        background: $surface;
-        overflow-y: auto;
-    }
-    #edit-dialog Label {
-        margin-top: 1;
-    }
     #edit-dialog #code-input {
-        min-height: 10;
-        height: 1fr;
+        height: 12;
+        min-height: 8;
     }
     """
 
@@ -128,19 +146,20 @@ class EditSnippetModal(ModalScreen[dict]):
         self._code_language = code_language
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="edit-dialog"):
-            yield Label(f"✏️  Edit Snippet {self._snippet_id}", id="edit-title")
-            yield Label("Title:")
-            yield Input(value=self._title, id="title-input")
-            yield Label("Description:")
-            yield Input(value=self._desc, id="desc-input")
-            yield Label("Use Case:")
-            yield Input(value=self._use_case, id="use-input")
-            yield Label("Tags (comma separated):")
-            yield Input(value=self._tags, id="tags-input")
-            yield Label("Code:")
-            yield TextArea(id="code-input", language=self._code_language)
-            with Horizontal():
+        with Vertical(id="edit-dialog", classes="modal-dialog modal-wide"):
+            yield Label(f"✏️  Edit Snippet {self._snippet_id}", id="edit-title", classes="modal-title")
+            with VerticalScroll(id="edit-form-body", classes="modal-body"):
+                yield Label("Title:")
+                yield Input(value=self._title, id="title-input")
+                yield Label("Description:")
+                yield Input(value=self._desc, id="desc-input")
+                yield Label("Use Case:")
+                yield Input(value=self._use_case, id="use-input")
+                yield Label("Tags (comma separated):")
+                yield Input(value=self._tags, id="tags-input")
+                yield Label("Code:")
+                yield TextArea(id="code-input", language=self._code_language)
+            with Horizontal(classes="modal-actions"):
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
 
@@ -164,16 +183,12 @@ class EditSnippetModal(ModalScreen[dict]):
 
 class ConfirmDeleteModal(ModalScreen[bool]):
     """Confirmation dialog before deleting a snippet."""
-    CSS = """
+    CSS = MODAL_BASE_CSS + """
     ConfirmDeleteModal {
         align: center middle;
     }
     #confirm-dialog {
-        padding: 2 4;
-        width: 50;
-        height: 10;
         border: thick $error;
-        background: $surface;
     }
     #confirm-dialog Label {
         text-align: center;
@@ -187,10 +202,10 @@ class ConfirmDeleteModal(ModalScreen[bool]):
         self._title = title
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="confirm-dialog"):
-            yield Label(f"🗑  Delete '{self._title}' ({self._snippet_id})?")
+        with Vertical(id="confirm-dialog", classes="modal-dialog modal-compact"):
+            yield Label(f"🗑  Delete '{self._title}' ({self._snippet_id})?", classes="modal-title")
             yield Label("This action cannot be undone.")
-            with Horizontal():
+            with Horizontal(classes="modal-actions"):
                 yield Button("Delete", variant="error", id="confirm-btn")
                 yield Button("Cancel", variant="primary", id="cancel-btn")
 
@@ -200,19 +215,9 @@ class ConfirmDeleteModal(ModalScreen[bool]):
 
 class EditTagsModal(ModalScreen[dict]):
     """Modal for adding or removing a tag from a snippet."""
-    CSS = """
+    CSS = MODAL_BASE_CSS + """
     EditTagsModal {
         align: center middle;
-    }
-    #tags-dialog {
-        padding: 1 2;
-        width: 60;
-        height: 16;
-        border: thick $background 80%;
-        background: $surface;
-    }
-    #tags-dialog Label {
-        margin-top: 1;
     }
     """
 
@@ -221,13 +226,13 @@ class EditTagsModal(ModalScreen[dict]):
         self._current_tags = current_tags
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="tags-dialog"):
-            yield Label("🏷  Edit Tags")
+        with Vertical(id="tags-dialog", classes="modal-dialog modal-compact"):
+            yield Label("🏷  Edit Tags", classes="modal-title")
             yield Label("Current Tags:")
             yield Input(value=self._current_tags, id="current-tags-input", disabled=True)
             yield Label("Tag:")
             yield Input(placeholder="tag name", id="tag-input")
-            with Horizontal():
+            with Horizontal(classes="modal-actions"):
                 yield Button("Add", variant="success", id="add-btn")
                 yield Button("Remove", variant="warning", id="remove-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
@@ -246,27 +251,17 @@ class EditTagsModal(ModalScreen[dict]):
 
 class UseSnippetModal(ModalScreen[dict]):
     """Modal for recording snippet usage."""
-    CSS = """
+    CSS = MODAL_BASE_CSS + """
     UseSnippetModal {
         align: center middle;
     }
-    #use-dialog {
-        padding: 1 2;
-        width: 55;
-        height: 12;
-        border: thick $background 80%;
-        background: $surface;
-    }
-    #use-dialog Label {
-        margin-top: 1;
-    }
     """
     def compose(self) -> ComposeResult:
-        with Vertical(id="use-dialog"):
-            yield Label("📝 Record Usage")
+        with Vertical(id="use-dialog", classes="modal-dialog modal-compact"):
+            yield Label("📝 Record Usage", classes="modal-title")
             yield Label("File path where used:")
             yield Input(id="file-input")
-            with Horizontal():
+            with Horizontal(classes="modal-actions"):
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
 
@@ -283,19 +278,13 @@ class UseSnippetModal(ModalScreen[dict]):
 
 class SettingsModal(ModalScreen[dict]):
     """Modal for updating persistent display settings."""
-    CSS = """
+    CSS = MODAL_BASE_CSS + """
     SettingsModal {
         align: center middle;
     }
     #settings-dialog {
-        padding: 1 2;
         width: 62;
-        height: 15;
         border: thick $primary;
-        background: $surface;
-    }
-    #settings-dialog Label {
-        margin-top: 1;
     }
     """
 
@@ -306,8 +295,8 @@ class SettingsModal(ModalScreen[dict]):
         self._current_accent = current_accent
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="settings-dialog"):
-            yield Label("Settings")
+        with Vertical(id="settings-dialog", classes="modal-dialog modal-compact"):
+            yield Label("Settings", classes="modal-title")
             yield Label("Theme:")
             yield Select(
                 [(theme, theme) for theme in self._themes],
@@ -322,7 +311,7 @@ class SettingsModal(ModalScreen[dict]):
                 allow_blank=False,
                 id="accent-select",
             )
-            with Horizontal():
+            with Horizontal(classes="modal-actions"):
                 yield Button("Apply", variant="success", id="apply-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
 

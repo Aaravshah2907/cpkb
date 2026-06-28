@@ -89,7 +89,7 @@ python -m pip install -e .
 
 ### Local Development & Testing
 
-If you wish to contribute to the codebase or run the unit tests locally to verify the CLI and TUI functionality, set up a virtual environment and run `pytest`:
+If you wish to contribute to the codebase or run the unit tests locally to verify the CLI and TUI functionality, set up a virtual environment and run `pytest`. The current suite has 57 tests covering CLI commands, database behavior, imports/exports, config-driven IDs, and TUI modal layout checks.
 
 ```bash
 # 1. Create and activate a virtual environment
@@ -101,6 +101,13 @@ python -m pip install -e ".[dev]"
 
 # 3. Run the test suite
 pytest
+```
+
+For more detail while debugging, use:
+
+```bash
+pytest -vv
+pytest --collect-only -q
 ```
 
 ## Platform‑specific dependencies
@@ -124,6 +131,7 @@ Here are the commands available in Version 2.0:
 ### Core V1 Commands
 
 - `cpkb add`: Add a new snippet interactively.
+- `cpkb add --id-format <name>`: Add a snippet using a configured ID format.
 - `cpkb list`: List all snippets.
 - `cpkb show <id>`: Show details, code, and usages of a specific snippet.
 - `cpkb search <query>`: Search for snippets matching multiple words.
@@ -143,6 +151,46 @@ Here are the commands available in Version 2.0:
 - `cpkb backup`: Manually trigger a backup of the SQLite database.
 - `cpkb setup`: Set up or revisit app directories, config, optional encryption settings, and bundled defaults without deleting snippets.
 - `cpkb setup --reset-config`: Recreate config from factory defaults while preserving your snippet database.
+- `cpkb id-format list`: Show configured ID formats from `config.json`.
+- `cpkb id-format add <name> --pattern <pattern>`: Store or update an ID format in `config.json`.
+- `cpkb id-format add <name> --prefix <prefix> --width <auto-or-number>`: Store or update an ID format using the legacy prefix/width form.
+- `cpkb id-format default <name>`: Set the format used by `cpkb add` when `--id-format` is omitted.
+
+Patterns use `#` characters for the generated number. Any literal prefix, suffix, or separator is kept:
+
+```bash
+cpkb id-format add note --pattern "NOTE-###"
+cpkb id-format add algo --pattern "ALG_####"
+cpkb id-format add handle --pattern "ID@#######"
+```
+
+The pattern guide is:
+
+```txt
+<ID_BEG_KEY><_.-@><#######>
+```
+
+For example, `NOTE-###` means begin key `NOTE`, separator `-`, and a three-digit number.
+
+To make note IDs like `NOTE-001` the default:
+
+```bash
+cpkb id-format add note --pattern "NOTE-###" --default
+cpkb add
+```
+
+Or keep your default format unchanged and use it for one snippet:
+
+```bash
+cpkb id-format add note --pattern "NOTE-###"
+cpkb add --id-format note
+```
+
+You can change the default later:
+
+```bash
+cpkb id-format default algo
+```
 
 ### New V2 Commands
 

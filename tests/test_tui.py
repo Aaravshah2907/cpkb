@@ -3,7 +3,15 @@ from unittest.mock import patch
 import tempfile
 from pathlib import Path
 from cpkb import tui
-from cpkb.tui import EditTagsModal, SettingsModal, SnippetApp
+from cpkb.tui import (
+    AddSnippetModal,
+    ConfirmDeleteModal,
+    EditSnippetModal,
+    EditTagsModal,
+    SettingsModal,
+    SnippetApp,
+    UseSnippetModal,
+)
 from cpkb import db
 from cpkb import config as cpkb_config
 
@@ -122,3 +130,27 @@ async def test_settings_modal_shows_theme_and_accent_controls(mock_db):
         assert modal.query_one("#theme-select") is not None
         assert modal.query_one("#accent-select") is not None
         assert modal.query_one("#apply-btn") is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("modal", "button_ids"),
+    [
+        (AddSnippetModal(), ["#save-btn", "#cancel-btn"]),
+        (EditSnippetModal("CP0001", "Title", "Desc", "Use", "tag", "code"), ["#save-btn", "#cancel-btn"]),
+        (ConfirmDeleteModal("CP0001", "Title"), ["#confirm-btn", "#cancel-btn"]),
+        (EditTagsModal("graph, dp"), ["#add-btn", "#remove-btn", "#cancel-btn"]),
+        (UseSnippetModal(), ["#save-btn", "#cancel-btn"]),
+        (SettingsModal(["textual-dark", "dracula"], "textual-dark", "cyan"), ["#apply-btn", "#cancel-btn"]),
+    ],
+)
+async def test_modal_action_buttons_are_visible_on_small_terminal(mock_db, modal, button_ids):
+    """Verify modal action rows remain visible in a constrained terminal."""
+    app = SnippetApp()
+    async with app.run_test(size=(82, 24)) as pilot:
+        app.push_screen(modal)
+        await pilot.pause()
+        for button_id in button_ids:
+            button = modal.query_one(button_id)
+            assert button.display
+            assert button.region.height > 0

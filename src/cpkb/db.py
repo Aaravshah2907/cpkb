@@ -3,6 +3,7 @@ CPKB Database Repository Layer
 Abstracts all SQLite interactions into clean helper functions.
 """
 
+import re
 import sqlite3
 import shutil
 from pathlib import Path
@@ -199,15 +200,32 @@ def _now() -> str:
 # ID Generation
 # ---------------------------------------------------------------------------
 
-def _id_format_config(format_name: str | None = None) -> tuple[str, int]:
-    """Return the prefix and numeric width for a configured ID format."""
-    config = load_config(APP_DIR)
-    snippets_config = config.get("snippets", {})
-    selected = format_name or snippets_config.get("default_id_format", "default")
-    formats = snippets_config.get("id_formats", {})
+def _normalize_id_pattern(pattern: str) -> str:
+    """Return a concrete ID pattern, accepting the documented bracket shorthand."""
+    return (
+        pattern.strip()
+        .replace("<ID_BEG_KEY>", "ID")
+        .replace("<_.-@>", "-")
+        .replace("<#######>", "#######")
+        .replace("<######>", "######")
+        .replace("<#####>", "#####")
+        .replace("<####>", "####")
+        .replace("<###>", "###")
+        .replace("<##>", "##")
+        .replace("<#>", "#")
+    )
 
-    fallback_formats = DEFAULT_CONFIG["snippets"]["id_formats"]
-    format_config = formats.get(selected) or fallback_formats["default"]
+
+def _pattern_parts(format_config: dict) -> tuple[str, str, str]:
+    """Return prefix, numeric placeholder, and suffix for an ID format."""
+    pattern = format_config.get("pattern")
+    if pattern:
+        pattern = _normalize_id_pattern(str(pattern))
+        match = re.search(r"#+", pattern)
+        if not match:
+            raise ValueError("ID format pattern must include at least one # placeholder.")
+        return pattern[:match.start()], match.group(0), pattern[match.end():]
+
     prefix = str(format_config.get("prefix", "CP"))
     width_value = format_config.get("width", "auto")
     if width_value == "auto":
@@ -217,27 +235,49 @@ def _id_format_config(format_name: str | None = None) -> tuple[str, int]:
             width = max(1, int(width_value))
         except (TypeError, ValueError):
             width = len(str(max_snippets(APP_DIR)))
+    return prefix, "#" * width, ""
 
-    return prefix, width
+
+def _id_format_config(format_name: str | None = None) -> tuple[str, int, str]:
+    """Return prefix, numeric width, and suffix for a configured ID format."""
+    config = load_config(APP_DIR)
+    snippets_config = config.get("snippets", {})
+    selected = format_name or snippets_config.get("default_id_format", "default")
+    formats = snippets_config.get("id_formats", {})
+
+    fallback_formats = DEFAULT_CONFIG["snippets"]["id_formats"]
+    format_config = formats.get(selected)
+    if format_config is None and selected in fallback_formats:
+        format_config = fallback_formats[selected]
+    if format_config is None:
+        available = ", ".join(sorted(formats)) or "default"
+        raise ValueError(f"Unknown ID format '{selected}'. Available formats: {available}")
+
+    prefix, digits, suffix = _pattern_parts(format_config)
+    return prefix, len(digits), suffix
 
 
 def generate_id(cursor: sqlite3.Cursor, format_name: str | None = None) -> str:
     """Generate the next snippet ID for a configured format (e.g., CP0001)."""
-    prefix, width = _id_format_config(format_name)
+    prefix, width, suffix = _id_format_config(format_name)
     cursor.execute("SELECT id FROM snippets")
     existing = []
     for (snippet_id,) in cursor.fetchall():
         if not snippet_id.startswith(prefix):
             continue
-        suffix = snippet_id[len(prefix):]
-        if suffix.isdigit():
-            existing.append(int(suffix))
+        numeric_part = snippet_id[len(prefix):]
+        if suffix:
+            if not numeric_part.endswith(suffix):
+                continue
+            numeric_part = numeric_part[:-len(suffix)]
+        if numeric_part.isdigit():
+            existing.append(int(numeric_part))
 
     next_num = max(existing, default=0) + 1
     limit = max_snippets(APP_DIR)
     if next_num > limit:
         raise ValueError(f"Maximum snippet count reached ({limit}). Update config.json to increase it.")
-    return f"{prefix}{next_num:0{width}d}"
+    return f"{prefix}{next_num:0{width}d}{suffix}"
 
 
 # ---------------------------------------------------------------------------

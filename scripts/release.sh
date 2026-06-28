@@ -35,6 +35,20 @@ success() { printf "${GREEN}✔${NC} %s\n" "$*"; }
 warn()    { printf "${YELLOW}⚠${NC} %s\n" "$*"; }
 die()     { printf "${RED}✖${NC} %s\n" "$*" >&2; exit 1; }
 
+countdown_sleep() {
+  local total_seconds="$1"
+  local message="$2"
+  local remaining minutes seconds
+
+  for ((remaining = total_seconds; remaining > 0; remaining--)); do
+    minutes=$((remaining / 60))
+    seconds=$((remaining % 60))
+    printf "\r${CYAN}▸${NC} %s Remaining: %02d:%02d" "$message" "$minutes" "$seconds"
+    sleep 1
+  done
+  printf "\r${CYAN}▸${NC} %s Remaining: 00:00\n" "$message"
+}
+
 # ── Pre-flight checks ──────────────────────────────────────────────────────────
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -112,8 +126,7 @@ info "Pushing to origin ..."
 git push origin main --tags
 success "Pushed commit and tag v$NEW_VERSION"
 
-info "Waiting 2 minutes for package indexes and release backends to reflect the new tag ..."
-sleep 120
+countdown_sleep 120 "Waiting for package indexes and release backends to reflect the new tag ..."
 
 # ── Step 5: Compute SHA256 from GitHub archive ──────────────────────────────────
 

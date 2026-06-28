@@ -306,6 +306,30 @@ def test_generate_id_uses_configured_id_format(temp_db):
     assert second == "TPL-01"
 
 
+def test_generate_id_uses_configured_pattern(temp_db):
+    """Test ID formats can be expressed as direct patterns with # placeholders."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "max_number": 9999,
+                "default_id_format": "note",
+                "id_formats": {
+                    "default": {"prefix": "CP", "width": "auto"},
+                    "note": {"pattern": "NOTE-###"},
+                    "handle": {"pattern": "ID@#######"},
+                },
+            },
+        },
+    )
+    cursor = temp_db.cursor()
+    first = db.add_snippet(cursor, temp_db, "Note", "desc", "use", "t1", "code")
+    second = db.add_snippet(cursor, temp_db, "Handle", "desc", "use", "t1", "code", "handle")
+
+    assert first == "NOTE-001"
+    assert second == "ID@0000001"
+
+
 def test_cmd_add_accepts_id_format(temp_db):
     """Test CLI add can select a configured ID format."""
     cpkb_config.save_config(
@@ -330,6 +354,114 @@ def test_cmd_add_accepts_id_format(temp_db):
     cursor = temp_db.cursor()
     cursor.execute("SELECT id FROM snippets WHERE title = ?", ("Note",))
     assert cursor.fetchone()[0] == "NOTE-01"
+
+
+def test_cmd_id_format_add_stores_format_in_config(temp_db, capsys):
+    """Test ID format management writes snippets.id_formats to config.json."""
+    args = MagicMock()
+    args.name = "note"
+    args.prefix = "NOTE-"
+    args.width = 3
+    args.default = True
+
+    cli.cmd_id_format_add(args)
+
+    captured = capsys.readouterr()
+    saved = cpkb_config.load_config(db.APP_DIR)
+    assert "Saved ID format 'note'" in captured.out
+    assert saved["snippets"]["id_formats"]["note"] == {"prefix": "NOTE-", "width": 3}
+    assert saved["snippets"]["default_id_format"] == "note"
+
+
+def test_cmd_id_format_add_stores_pattern_in_config(temp_db, capsys):
+    """Test ID format management can store direct patterns in config.json."""
+    args = MagicMock()
+    args.name = "note"
+    args.pattern = "NOTE-###"
+    args.prefix = None
+    args.width = "auto"
+    args.default = True
+
+    cli.cmd_id_format_add(args)
+
+    captured = capsys.readouterr()
+    saved = cpkb_config.load_config(db.APP_DIR)
+    assert "Saved ID format 'note'" in captured.out
+    assert saved["snippets"]["id_formats"]["note"] == {"pattern": "NOTE-###"}
+    assert saved["snippets"]["default_id_format"] == "note"
+
+
+def test_cmd_id_format_default_changes_default_format(temp_db, capsys):
+    """Test users can change the default ID format after creating it."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "id_formats": {
+                    "default": {"prefix": "CP", "width": "auto"},
+                    "note": {"pattern": "NOTE-###"},
+                },
+            },
+        },
+    )
+    args = MagicMock()
+    args.name = "note"
+
+    cli.cmd_id_format_default(args)
+
+    captured = capsys.readouterr()
+    saved = cpkb_config.load_config(db.APP_DIR)
+    assert "Default ID format set to 'note'" in captured.out
+    assert saved["snippets"]["default_id_format"] == "note"
+
+
+def test_cmd_add_unknown_id_format_errors(temp_db, capsys):
+    """Test selecting a missing ID format fails instead of falling back silently."""
+    args = MagicMock()
+    args.id_format = "missing"
+    with patch("builtins.input", side_effect=["Note", "Desc", "Use", "tag"]), \
+         patch("sys.stdin.readlines", return_value=["code"]), \
+         pytest.raises(SystemExit):
+        cli.cmd_add(args)
+
+    captured = capsys.readouterr()
+    assert "Unknown ID format 'missing'" in captured.err
+
+
+def test_cmd_import_can_regenerate_ids_with_configured_format(temp_db, capsys):
+    """Test import --id-format is passed through when generating new IDs."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "max_number": 9999,
+                "id_formats": {
+                    "default": {"prefix": "CP", "width": "auto"},
+                    "note": {"prefix": "NOTE-", "width": 2},
+                },
+            },
+        },
+    )
+    args = MagicMock()
+    args.list_defaults = False
+    args.defaults = False
+    args.source = None
+    args.format = None
+    args.encrypted = False
+    args.regenerate_ids = True
+    args.id_format = "note"
+
+    with patch("cpkb.cli._load_import_snippets", return_value=[
+        {"id": "OLD1", "title": "Imported", "code": "code", "tags": "tag"},
+    ]):
+        args.source = "snippets.json"
+        cli.cmd_import(args)
+
+    captured = capsys.readouterr()
+    cursor = temp_db.cursor()
+    cursor.execute("SELECT id FROM snippets WHERE title = ?", ("Imported",))
+    assert cursor.fetchone()[0] == "NOTE-01"
+    assert "Imported 1 snippet(s)" in captured.out
 
 
 def test_cmd_add_merges_default_tags(temp_db):
