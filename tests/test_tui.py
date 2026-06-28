@@ -90,6 +90,11 @@ async def test_tui_loads_display_config(mock_db):
             "snippets": {
                 "code_language": "cpp",
                 "default_tags": "cp",
+                "default_id_format": "note",
+                "id_formats": {
+                    "default": {"prefix": "CP", "width": "auto"},
+                    "note": {"pattern": "NOTE-###"},
+                },
             },
         },
     )
@@ -103,6 +108,61 @@ async def test_tui_loads_display_config(mock_db):
         assert app.left_pane_width == 45
         assert app.code_language == "cpp"
         assert app.default_tags == "cp"
+        assert app.default_id_format == "note"
+        assert app.id_formats["note"]["pattern"] == "NOTE-###"
+
+
+@pytest.mark.asyncio
+async def test_add_modal_shows_configured_id_formats(mock_db):
+    """Verify add modal lets TUI users choose a configured ID format."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        modal = AddSnippetModal(
+            id_formats={
+                "default": {"prefix": "CP", "width": "auto"},
+                "note": {"pattern": "NOTE-###"},
+            },
+            default_id_format="note",
+        )
+        app.push_screen(modal)
+        await pilot.pause()
+        select = modal.query_one("#id-format-select")
+        assert select.value == "note"
+
+
+@pytest.mark.asyncio
+async def test_tui_add_uses_selected_id_format(mock_db):
+    """Verify TUI add passes the selected ID format to the repository."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "snippets": {
+                "default_id_format": "note",
+                "id_formats": {
+                    "default": {"prefix": "CP", "width": "auto"},
+                    "note": {"pattern": "NOTE-###"},
+                },
+            },
+        },
+    )
+
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await app.action_add_snippet()
+        await pilot.pause()
+        modal = app.screen
+        modal.query_one("#title-input").value = "TUI Note"
+        modal.query_one("#code-input").load_text("code")
+        modal.query_one("#id-format-select").value = "note"
+        modal.query_one("#save-btn").press()
+        await pilot.pause()
+
+    conn = db.get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM snippets WHERE title = ?", ("TUI Note",))
+    assert cursor.fetchone() == ("NOTE-001",)
+    conn.close()
 
 
 @pytest.mark.asyncio
@@ -124,7 +184,7 @@ async def test_settings_modal_shows_theme_and_accent_controls(mock_db):
     """Verify the settings modal includes theme and accent selectors."""
     app = SnippetApp()
     async with app.run_test() as pilot:
-        modal = SettingsModal(["textual-dark", "dracula"], "dracula", "pink")
+        modal = SettingsModal(["textual-dark", "dracula"], "dracula", "pink", {"default": {"color": "cyan"}})
         app.push_screen(modal)
         await pilot.pause()
         assert modal.query_one("#theme-select") is not None
@@ -141,7 +201,7 @@ async def test_settings_modal_shows_theme_and_accent_controls(mock_db):
         (ConfirmDeleteModal("CP0001", "Title"), ["#confirm-btn", "#cancel-btn"]),
         (EditTagsModal("graph, dp"), ["#add-btn", "#remove-btn", "#cancel-btn"]),
         (UseSnippetModal(), ["#save-btn", "#cancel-btn"]),
-        (SettingsModal(["textual-dark", "dracula"], "textual-dark", "cyan"), ["#apply-btn", "#cancel-btn"]),
+        (SettingsModal(["textual-dark", "dracula"], "textual-dark", "cyan", {"default": {"color": "cyan"}}), ["#apply-btn", "#cancel-btn"]),
     ],
 )
 async def test_modal_action_buttons_are_visible_on_small_terminal(mock_db, modal, button_ids):

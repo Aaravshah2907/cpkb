@@ -83,10 +83,32 @@ class AddSnippetModal(ModalScreen[dict]):
         min-height: 8;
     }
     """
-    def __init__(self, code_language: str = "python", default_tags: str = "") -> None:
+    def __init__(
+        self,
+        code_language: str = "python",
+        default_tags: str = "",
+        id_formats: dict | None = None,
+        default_id_format: str = "default",
+    ) -> None:
         super().__init__()
         self._code_language = code_language
         self._default_tags = default_tags
+        self._id_formats = id_formats or {"default": DEFAULT_CONFIG["snippets"]["id_formats"]["default"]}
+        self._default_id_format = (
+            default_id_format if default_id_format in self._id_formats else "default"
+        )
+
+    def _format_options(self) -> list[tuple[str, str]]:
+        options = []
+        for name in sorted(self._id_formats):
+            config = self._id_formats[name]
+            pattern = config.get("pattern")
+            if not pattern:
+                width = config.get("width", "auto")
+                digits = "#" * int(width) if str(width).isdigit() else "#..."
+                pattern = f"{config.get('prefix', 'CP')}{digits}"
+            options.append((f"{name} ({pattern})", name))
+        return options
 
     def compose(self) -> ComposeResult:
         with Vertical(id="add-dialog", classes="modal-dialog modal-wide"):
@@ -100,6 +122,13 @@ class AddSnippetModal(ModalScreen[dict]):
                 yield Input(id="use-input")
                 yield Label("Tags (comma separated):")
                 yield Input(value=self._default_tags, id="tags-input")
+                yield Label("ID Format:")
+                yield Select(
+                    self._format_options(),
+                    value=self._default_id_format,
+                    allow_blank=False,
+                    id="id-format-select",
+                )
                 yield Label("Code:")
                 yield TextArea(id="code-input", language=self._code_language)
             with Horizontal(classes="modal-actions"):
@@ -112,9 +141,17 @@ class AddSnippetModal(ModalScreen[dict]):
             desc = self.query_one("#desc-input", Input).value.strip()
             use = self.query_one("#use-input", Input).value.strip()
             tags = self.query_one("#tags-input", Input).value.strip()
+            id_format = str(self.query_one("#id-format-select", Select).value)
             code = self.query_one("#code-input", TextArea).text.strip()
             if title and code:
-                self.dismiss({"title": title, "desc": desc, "use": use, "tags": tags, "code": code})
+                self.dismiss({
+                    "title": title,
+                    "desc": desc,
+                    "use": use,
+                    "tags": tags,
+                    "id_format": id_format,
+                    "code": code,
+                })
             else:
                 self.notify("Title and Code are required", severity="error")
         else:
@@ -288,11 +325,12 @@ class SettingsModal(ModalScreen[dict]):
     }
     """
 
-    def __init__(self, themes: list[str], current_theme: str, current_accent: str) -> None:
+    def __init__(self, themes: list[str], current_theme: str, current_accent: str, id_formats: dict) -> None:
         super().__init__()
         self._themes = themes
         self._current_theme = current_theme
         self._current_accent = current_accent
+        self._id_formats = id_formats
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-dialog", classes="modal-dialog modal-compact"):
@@ -311,15 +349,30 @@ class SettingsModal(ModalScreen[dict]):
                 allow_blank=False,
                 id="accent-select",
             )
+            yield Label("Format Colors:")
+            for fmt_name, fmt_cfg in self._id_formats.items():
+                current_color = fmt_cfg.get("color", "cyan")
+                yield Select(
+                    [(name.title(), name) for name in ACCENT_COLORS],
+                    value=current_color,
+                    allow_blank=False,
+                    id=f"fmt-color-{fmt_name}",
+                    prompt=f"{fmt_name} color",
+                )
             with Horizontal(classes="modal-actions"):
                 yield Button("Apply", variant="success", id="apply-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "apply-btn":
+            format_colors = {}
+            for fmt_name in self._id_formats:
+                format_colors[fmt_name] = str(self.query_one(f"#fmt-color-{fmt_name}", Select).value)
+            
             self.dismiss({
                 "theme": str(self.query_one("#theme-select", Select).value),
                 "accent_color": str(self.query_one("#accent-select", Select).value),
+                "format_colors": format_colors,
             })
         else:
             self.dismiss(None)
@@ -400,6 +453,15 @@ class SnippetApp(App):
             or DEFAULT_CONFIG["snippets"]["code_language"]
         )
         self.default_tags = str(snippets_config.get("default_tags") or "")
+        self.id_formats = snippets_config.get("id_formats", DEFAULT_CONFIG["snippets"]["id_formats"])
+        
+        # Ensure default colors for formats
+        color_names = list(ACCENT_COLORS.keys())
+        for i, (fmt_name, fmt_cfg) in enumerate(self.id_formats.items()):
+            if "color" not in fmt_cfg:
+                fmt_cfg["color"] = color_names[i % len(color_names)]
+
+        self.default_id_format = str(snippets_config.get("default_id_format", "default"))
         return theme, accent
 
     def _custom_theme_name(self, theme: str, accent: str) -> str:
@@ -504,16 +566,39 @@ class SnippetApp(App):
             if result:
                 theme, accent = self._apply_display_config(result["theme"], result["accent_color"])
                 self._save_display_config(theme, accent)
+                
+                # Save format colors
+                config = load_config(APP_DIR)
+                snippets_cfg = config.setdefault("snippets", {})
+                id_formats = snippets_cfg.setdefault("id_formats", DEFAULT_CONFIG["snippets"]["id_formats"])
+                for fmt_name, color in result["format_colors"].items():
+                    if fmt_name in id_formats:
+                        id_formats[fmt_name]["color"] = color
+                save_config(APP_DIR, config)
+                self.id_formats = id_formats
+                self.run_worker(self.action_refresh())
+                
                 self.notify("Display settings saved.")
 
         self.push_screen(
-            SettingsModal(themes, self.display_theme, self.display_accent),
+            SettingsModal(themes, self.display_theme, self.display_accent, self.id_formats),
             check_result,
         )
 
     # ------------------------------------------------------------------
     # Refresh
     # ------------------------------------------------------------------
+
+    def _get_format_color(self, snippet_id: str) -> str:
+        for fmt_name, fmt_cfg in self.id_formats.items():
+            pattern = fmt_cfg.get("pattern")
+            if pattern:
+                prefix = pattern.split("<")[0].split("#")[0]
+            else:
+                prefix = fmt_cfg.get("prefix", "CP")
+            if snippet_id.startswith(prefix):
+                return fmt_cfg.get("color", "cyan")
+        return "white"
 
     async def action_refresh(self, query: str = "") -> None:
         """Refresh the list of snippets."""
@@ -527,7 +612,13 @@ class SnippetApp(App):
             rows = self.cursor.fetchall()
 
         for row in rows:
-            list_view.append(ListItem(Label(f"{row[0]} - {row[1]}"), id=f"item_{row[0]}"))
+            snippet_id = row[0]
+            color = self._get_format_color(snippet_id)
+            if color in ACCENT_COLORS:
+                color_hex = ACCENT_COLORS[color]
+            else:
+                color_hex = color
+            list_view.append(ListItem(Label(f"[{color_hex}]{row[0]}[/] - {row[1]}"), id=f"item_{row[0]}"))
 
         if rows:
             list_view.index = 0
@@ -640,12 +731,20 @@ class SnippetApp(App):
                 snippet_id = add_snippet(
                     self.cursor, self.conn,
                     result["title"], result["desc"], result["use"],
-                    result["tags"], result["code"],
+                    result["tags"], result["code"], result["id_format"],
                 )
                 self.run_worker(self.action_refresh())
                 self.notify(f"Added snippet {snippet_id}!")
 
-        self.push_screen(AddSnippetModal(self.code_language, self.default_tags), check_result)
+        self.push_screen(
+            AddSnippetModal(
+                self.code_language,
+                self.default_tags,
+                self.id_formats,
+                self.default_id_format,
+            ),
+            check_result,
+        )
 
     # ------------------------------------------------------------------
     # Use (native modal)
