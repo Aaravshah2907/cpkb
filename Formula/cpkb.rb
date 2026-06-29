@@ -9,9 +9,6 @@ class Cpkb < Formula
   depends_on "fzf" => :recommended
 
   def install
-    # Dynamically inject the version into __init__.py fallback
-    inreplace "src/cpkb/__init__.py", '__version__ = "unknown"', "__version__ = \"#{version}\""
-
     libexec.install "src"
 
     (bin/"cpkb").write <<~EOS
