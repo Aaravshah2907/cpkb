@@ -89,7 +89,7 @@ python -m pip install -e .
 
 ### Local Development & Testing
 
-If you wish to contribute to the codebase or run the unit tests locally to verify the CLI and TUI functionality, set up a virtual environment and run `pytest`. The current suite has 57 tests covering CLI commands, database behavior, imports/exports, config-driven IDs, and TUI modal layout checks.
+If you wish to contribute to the codebase or run the unit tests locally to verify the CLI and TUI functionality, set up a virtual environment and run `pytest`. The current suite covers CLI commands, database behavior, imports/exports, config-driven IDs, and TUI modal layout checks.
 
 ```bash
 # 1. Create and activate a virtual environment
@@ -99,9 +99,14 @@ source venv/bin/activate  # On Windows use: venv\Scripts\activate
 # 2. Install CPKB and test dependencies
 python -m pip install -e ".[dev]"
 
-# 3. Run the test suite
+# 3. Run tests
 pytest
 ```
+
+**Testing CLI overrides (Homebrew vs Pip)**
+If you normally use the Homebrew installation of `cpkb`, but want to test your local codebase changes as a global command in your terminal:
+1. Run `pip install -e .` (without a virtual environment) to temporarily override the Homebrew installation. This links your active terminal to your live local folder, allowing you to instantly see your changes when you type `cpkb`.
+2. When you are done testing, run `pip uninstall cpkb` to safely fall back to the stable Homebrew installation.
 
 For more detail while debugging, use:
 

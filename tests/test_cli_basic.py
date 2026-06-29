@@ -44,6 +44,22 @@ def test_cli_version(capsys):
     assert f"cpkb {__version__}" in captured.out
 
 
+def test_version_match_pyproject():
+    """Ensure the hardcoded __init__.py version matches pyproject.toml."""
+    import re
+    from pathlib import Path
+    from cpkb import __version__
+
+    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+    content = pyproject_path.read_text()
+    
+    match = re.search(r'version\s*=\s*"([^"]+)"', content)
+    assert match is not None, "Could not find version in pyproject.toml"
+    
+    pyproject_version = match.group(1)
+    assert __version__ == pyproject_version, f"Version mismatch: __init__.py has {__version__}, but pyproject.toml has {pyproject_version}"
+
+
 def test_cli_help_includes_tag_commands(capsys):
     """Ensure implemented tag commands are exposed by argparse."""
     from cpkb.cli import main

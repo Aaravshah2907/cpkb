@@ -105,7 +105,7 @@ success "Version bumped in pyproject.toml, __init__.py, setup.sh"
 # ── Step 2: Run tests ───────────────────────────────────────────────────────────
 
 info "Running test suite ..."
-pytest -q
+PYTHONPATH=src pytest -q
 success "All tests passed"
 
 # ── Step 3: Build sdist + wheel ─────────────────────────────────────────────────
