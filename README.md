@@ -118,11 +118,36 @@ pytest --collect-only -q
 | Linux    | `xclip` or `xsel`   | `sudo apt-get install fzf`                 |
 | Windows  | `clip` (built‑in)   | `scoop install fzf` or `choco install fzf` |
 
-## Optional Integrations
+## Extras & Integrations
 
-CPKB includes an optional SketchyBar integration for macOS. It adds a menu bar item that opens a snippet search dialog and copies the selected snippet.
+CPKB includes several optional extras to integrate seamlessly into your workflow, all located in the [extras/](extras) directory.
 
-See [integrations/sketchybar](integrations/sketchybar) for the plugin script and `sketchybarrc` snippet.
+### Editor Plugins
+- **VS Code**: A VS Code extension that uses a QuickPick menu to search for snippets via `cpkb query` and inserts them right into your active editor. Located in [extras/vscode](extras/vscode).
+- **Neovim**: A Telescope extension for querying and inserting snippets inside Neovim. Located in [extras/nvim](extras/nvim). Add it to your Neovim config and load the `cpkb` telescope extension.
+
+### Shell Completions
+- **Bash, Zsh, and Fish**: Auto-completion scripts for CLI subcommands and dynamic snippet IDs. Located in [extras/completions](extras/completions). 
+
+To enable tab completions, add the appropriate line to your shell's configuration file (replace `/path/to/cpkb` with the actual path to the repository):
+
+**Bash** (`~/.bashrc`):
+```bash
+source /path/to/cpkb/extras/completions/cpkb.bash
+```
+
+**Zsh** (`~/.zshrc`):
+```zsh
+source /path/to/cpkb/extras/completions/cpkb.zsh
+```
+
+**Fish** (`~/.config/fish/config.fish`):
+```fish
+source /path/to/cpkb/extras/completions/cpkb.fish
+```
+
+### SketchyBar (macOS)
+- **SketchyBar**: Adds a menu bar item that opens a snippet search dialog and copies the selected snippet. Located in [extras/sketchybar](extras/sketchybar). See the folder for the plugin script and `sketchybarrc` snippet.
 
 ## Usage
 

@@ -1,0 +1,23 @@
+{
+  "name": "cpkb-vscode",
+  "displayName": "CPKB Snippets",
+  "description": "Insert Competitive Programming Knowledge Base snippets into your editor.",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Snippets",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cpkb.insertSnippet",
+        "title": "CPKB: Insert Snippet"
+      }
+    ]
+  }
+}
