@@ -536,7 +536,7 @@ class SettingsModal(ModalScreen[dict]):
                 )
                 yield Label("Border Style:")
                 yield Select(
-                    [(b.title(), b) for b in ["solid", "heavy", "rounded", "double"]],
+                    [(b.title(), b) for b in ["solid", "heavy", "round", "double", "thick", "dashed"]],
                     value=self._border_style,
                     allow_blank=False,
                     id="border-select",
@@ -607,7 +607,6 @@ class SnippetApp(App):
 
     CSS = """
     #left-pane {
-        border-right: solid $primary;
         height: 100%;
     }
     #right-pane {
@@ -665,6 +664,8 @@ class SnippetApp(App):
             pane_width = DEFAULT_CONFIG["display"]["left_pane_width"]
         self.layout_dir = str(display.get("layout", DEFAULT_CONFIG["display"]["layout"]))
         self.border_style = str(display.get("border_style", DEFAULT_CONFIG["display"]["border_style"]))
+        if self.border_style == "rounded":
+            self.border_style = "round"
         
         self.left_pane_width = max(
             15,
@@ -715,9 +716,10 @@ class SnippetApp(App):
                     self.unregister_theme(custom_theme_obj.name)
                 self.register_theme(custom_theme_obj)
                 self.theme = custom_theme_obj.name
+                self.theme = custom_theme_obj.name
                 self.display_theme = theme
                 self.display_accent = accent
-                self._update_layout_styles(custom_theme_obj)
+                self._update_layout_styles()
                 return theme, accent
             else:
                 theme = DEFAULT_CONFIG["display"]["theme"]
@@ -752,32 +754,39 @@ class SnippetApp(App):
         self.register_theme(custom_theme)
         self.theme = custom_theme.name
         self.display_theme = theme
+        self.display_theme = theme
         self.display_accent = accent
         
-        self._update_layout_styles(custom_theme)
+        self._update_layout_styles()
         return theme, accent
 
-    def _update_layout_styles(self, custom_theme: Theme) -> None:
+    def _update_layout_styles(self) -> None:
         # update layout styles dynamically
         try:
+            custom_theme = self.available_themes.get(self.theme)
+            if not custom_theme:
+                return
+
             main_container = self.query_one("#main-container")
             left_pane = self.query_one("#left-pane")
             right_pane = self.query_one("#right-pane")
+            
+            border = (self.border_style, custom_theme.primary)
             
             if self.layout_dir == "vertical":
                 main_container.styles.layout = "vertical"
                 left_pane.styles.width = "100%"
                 left_pane.styles.height = f"{self.left_pane_width}%"
-                left_pane.styles.border_right = "none"
-                left_pane.styles.border_bottom = (self.border_style, custom_theme.primary)
+                left_pane.styles.border_right = ("none", "transparent")
+                left_pane.styles.border_bottom = border
                 right_pane.styles.width = "100%"
                 right_pane.styles.height = f"{100 - self.left_pane_width}%"
             else:
                 main_container.styles.layout = "horizontal"
                 left_pane.styles.height = "100%"
                 left_pane.styles.width = f"{self.left_pane_width}%"
-                left_pane.styles.border_bottom = "none"
-                left_pane.styles.border_right = (self.border_style, custom_theme.primary)
+                left_pane.styles.border_bottom = ("none", "transparent")
+                left_pane.styles.border_right = border
                 right_pane.styles.height = "100%"
                 right_pane.styles.width = f"{100 - self.left_pane_width}%"
         except Exception:
@@ -827,6 +836,10 @@ class SnippetApp(App):
     def action_page_detail_up(self) -> None:
         """Page the snippet detail pane up."""
         self.query_one("#snippet-view", Markdown).scroll_page_up(animate=False)
+
+    def on_ready(self) -> None:
+        """Called when the DOM is fully ready."""
+        self._update_layout_styles()
 
     async def on_mount(self) -> None:
         self.conn = init_db()

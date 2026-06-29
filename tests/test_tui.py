@@ -754,3 +754,72 @@ async def test_settings_existing_custom_hex_prefills_input(mock_db):
         await pilot.pause()
         # The hex input should be pre-filled with the custom color
         assert modal.query_one("#fmt-hex-default").value == "#ff6347"
+
+
+# ---------------------------------------------------------------------------
+# Layout and Border Style tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_settings_modal_layout_and_border_options(mock_db):
+    """Verify SettingsModal provides layout and border style Selects and returns them."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        modal = SettingsModal(
+            ["textual-dark"], "textual-dark", "cyan", {}, "vertical", "dashed"
+        )
+        results = []
+
+        def on_dismiss(result):
+            results.append(result)
+
+        app.push_screen(modal, on_dismiss)
+        await pilot.pause()
+        
+        layout_select = modal.query_one("#layout-select")
+        border_select = modal.query_one("#border-select")
+        
+        assert layout_select.value == "vertical"
+        assert border_select.value == "dashed"
+        
+        # Change them
+        layout_select.value = "horizontal"
+        border_select.value = "thick"
+        
+        modal.query_one("#apply-btn").press()
+        await pilot.pause()
+        
+        assert len(results) == 1
+        assert results[0]["layout"] == "horizontal"
+        assert results[0]["border_style"] == "thick"
+
+
+@pytest.mark.asyncio
+async def test_tui_layout_horizontal_vertical(mock_db):
+    """Verify SnippetApp updates layout directions and borders based on layout config."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        
+        main_container = app.query_one("#main-container")
+        left_pane = app.query_one("#left-pane")
+        
+        # Test horizontal layout
+        app.layout_dir = "horizontal"
+        app.border_style = "round"
+        app._update_layout_styles()
+        await pilot.pause()
+        
+        assert main_container.styles.layout.name == "horizontal"
+        assert left_pane.styles.border_right[0] == "round"
+        assert left_pane.styles.border_bottom[0] in ("", "none")
+        
+        # Test vertical layout
+        app.layout_dir = "vertical"
+        app.border_style = "dashed"
+        app._update_layout_styles()
+        await pilot.pause()
+        
+        assert main_container.styles.layout.name == "vertical"
+        assert left_pane.styles.border_bottom[0] == "dashed"
+        assert left_pane.styles.border_right[0] in ("", "none")
