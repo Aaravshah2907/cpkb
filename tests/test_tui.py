@@ -6,9 +6,11 @@ from cpkb import tui
 from cpkb.tui import (
     AddSnippetModal,
     ConfirmDeleteModal,
+    CustomThemeModal,
     EditSnippetModal,
     EditTagsModal,
     NewFormatModal,
+    PathSuggester,
     SettingsModal,
     SnippetApp,
     UseSnippetModal,
@@ -411,3 +413,254 @@ async def test_tui_create_new_id_format(mock_db):
         assert saved["snippets"]["id_formats"]["custom"]["prefix"] == "CUST"
         assert saved["snippets"]["id_formats"]["custom"]["width"] == 3
 
+
+# ---------------------------------------------------------------------------
+# PathSuggester tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_path_suggester_returns_none_for_empty():
+    """Verify PathSuggester returns None for empty input."""
+    suggester = PathSuggester()
+    result = await suggester.get_suggestion("")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_path_suggester_suggests_existing_file():
+    """Verify PathSuggester suggests files in an existing directory."""
+    with tempfile.TemporaryDirectory() as tmp:
+        test_file = Path(tmp) / "hello.txt"
+        test_file.touch()
+        suggester = PathSuggester()
+        result = await suggester.get_suggestion(tmp + "/h")
+        assert result is not None
+        assert "hello.txt" in result
+
+
+@pytest.mark.asyncio
+async def test_path_suggester_appends_separator_for_dirs():
+    """Verify PathSuggester appends os.sep when the match is a directory."""
+    import os
+    with tempfile.TemporaryDirectory() as tmp:
+        subdir = Path(tmp) / "subdir"
+        subdir.mkdir()
+        suggester = PathSuggester()
+        result = await suggester.get_suggestion(tmp + "/s")
+        assert result is not None
+        assert result.endswith(os.sep)
+
+
+@pytest.mark.asyncio
+async def test_path_suggester_returns_none_for_nonexistent_path():
+    """Verify PathSuggester returns None for a path that doesn't exist."""
+    suggester = PathSuggester()
+    result = await suggester.get_suggestion("/definitely/not/a/real/path/xyz")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# CustomThemeModal tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_custom_theme_modal_shows_all_color_inputs(mock_db):
+    """Verify CustomThemeModal renders input fields for all theme color keys."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        theme_cfg = {
+            "primary": "#00ffff", "secondary": "#3399ff", "warning": "#fabd2f",
+            "error": "#ff5555", "success": "#4EBF71", "accent": "#00ffff",
+            "foreground": "#ffffff", "background": "#1e1e1e", "surface": "#252526",
+            "panel": "#2d2d30", "boost": "#333333", "dark": True,
+        }
+        modal = CustomThemeModal(theme_cfg)
+        app.push_screen(modal)
+        await pilot.pause()
+        for key in ["primary", "secondary", "warning", "error", "success",
+                     "accent", "foreground", "background", "surface", "panel", "boost"]:
+            inp = modal.query_one(f"#color-{key}")
+            assert inp is not None
+            assert inp.value == theme_cfg[key]
+        assert modal.query_one("#color-dark") is not None
+
+
+@pytest.mark.asyncio
+async def test_custom_theme_modal_save_returns_values(mock_db):
+    """Verify saving CustomThemeModal returns the edited values."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        theme_cfg = {
+            "primary": "#00ffff", "secondary": "#3399ff", "warning": "#fabd2f",
+            "error": "#ff5555", "success": "#4EBF71", "accent": "#00ffff",
+            "foreground": "#ffffff", "background": "#1e1e1e", "surface": "#252526",
+            "panel": "#2d2d30", "boost": "#333333", "dark": True,
+        }
+        results = []
+
+        def on_dismiss(result):
+            results.append(result)
+
+        modal = CustomThemeModal(theme_cfg)
+        app.push_screen(modal, on_dismiss)
+        await pilot.pause()
+        modal.query_one("#color-primary").value = "#ff0000"
+        modal.query_one("#save-btn").press()
+        await pilot.pause()
+        assert len(results) == 1
+        assert results[0] is not None
+        assert results[0]["primary"] == "#ff0000"
+        assert results[0]["dark"] is True
+
+
+@pytest.mark.asyncio
+async def test_custom_theme_modal_cancel_returns_none(mock_db):
+    """Verify cancelling CustomThemeModal returns None."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        results = []
+
+        def on_dismiss(result):
+            results.append(result)
+
+        modal = CustomThemeModal({"primary": "#00ffff", "dark": True})
+        app.push_screen(modal, on_dismiss)
+        await pilot.pause()
+        modal.query_one("#cancel-btn").press()
+        await pilot.pause()
+        assert len(results) == 1
+        assert results[0] is None
+
+
+@pytest.mark.asyncio
+async def test_custom_theme_modal_buttons_visible_on_small_terminal(mock_db):
+    """Verify CustomThemeModal buttons are visible on a small terminal."""
+    app = SnippetApp()
+    async with app.run_test(size=(82, 24)) as pilot:
+        theme_cfg = {
+            "primary": "#00ffff", "secondary": "#3399ff", "warning": "#fabd2f",
+            "error": "#ff5555", "success": "#4EBF71", "accent": "#00ffff",
+            "foreground": "#ffffff", "background": "#1e1e1e", "surface": "#252526",
+            "panel": "#2d2d30", "boost": "#333333", "dark": True,
+        }
+        modal = CustomThemeModal(theme_cfg)
+        app.push_screen(modal)
+        await pilot.pause()
+        save_btn = modal.query_one("#save-btn")
+        cancel_btn = modal.query_one("#cancel-btn")
+        assert save_btn.display
+        assert save_btn.region.height > 0
+        assert cancel_btn.display
+        assert cancel_btn.region.height > 0
+
+
+# ---------------------------------------------------------------------------
+# Settings modal: format color labels & Edit Custom Theme button
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_settings_format_color_labels_show_id_names(mock_db):
+    """Verify each format color selector has a label showing the format name."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        id_formats = {
+            "default": {"color": "cyan", "prefix": "CP", "width": "auto"},
+            "algo": {"color": "green", "pattern": "ALG-###"},
+        }
+        modal = SettingsModal(
+            ["textual-dark"], "textual-dark", "cyan", id_formats,
+        )
+        app.push_screen(modal)
+        await pilot.pause()
+        labels = [str(lbl.content) for lbl in modal.query("Label")]
+        assert any("default" in t for t in labels)
+        assert any("algo" in t for t in labels)
+
+
+@pytest.mark.asyncio
+async def test_settings_edit_custom_theme_button_exists(mock_db):
+    """Verify the Edit Custom Theme button is present in SettingsModal."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        modal = SettingsModal(
+            ["textual-dark", "custom"], "textual-dark", "cyan",
+            {"default": {"color": "cyan"}},
+        )
+        app.push_screen(modal)
+        await pilot.pause()
+        btn = modal.query_one("#edit-custom-theme-btn")
+        assert btn is not None
+
+
+@pytest.mark.asyncio
+async def test_settings_edit_custom_theme_opens_modal(mock_db):
+    """Verify clicking Edit Custom Theme button opens CustomThemeModal."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        modal = SettingsModal(
+            ["textual-dark", "custom"], "textual-dark", "cyan",
+            {"default": {"color": "cyan"}},
+        )
+        app.push_screen(modal)
+        await pilot.pause()
+        modal.query_one("#edit-custom-theme-btn").press()
+        await pilot.pause()
+        assert isinstance(app.screen, CustomThemeModal)
+
+
+@pytest.mark.asyncio
+async def test_custom_theme_applied_when_selected(mock_db):
+    """Verify selecting 'custom' theme applies custom_theme colors from config."""
+    cpkb_config.save_config(
+        db.APP_DIR,
+        {
+            "display": {
+                "theme": "custom",
+                "accent_color": "cyan",
+                "custom_theme": {
+                    "primary": "#ff1493", "secondary": "#3399ff",
+                    "warning": "#fabd2f", "error": "#ff5555",
+                    "success": "#4EBF71", "accent": "#ff1493",
+                    "foreground": "#ffffff", "background": "#0a0a0a",
+                    "surface": "#1a1a1a", "panel": "#2a2a2a",
+                    "boost": "#3a3a3a", "dark": True,
+                },
+            },
+        },
+    )
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.display_theme == "custom"
+        assert app.theme == "cpkb-custom"
+
+
+@pytest.mark.asyncio
+async def test_settings_custom_theme_in_themes_list(mock_db):
+    """Verify 'custom' appears in the settings theme dropdown."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await app.action_settings()
+        await pilot.pause()
+        modal = app.screen
+        theme_select = modal.query_one("#theme-select")
+        option_values = [opt[1] for opt in theme_select._options]
+        assert "custom" in option_values
+
+
+# ---------------------------------------------------------------------------
+# UseSnippetModal: path input has suggester
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_use_snippet_modal_has_path_suggester(mock_db):
+    """Verify UseSnippetModal file input has a PathSuggester attached."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        modal = UseSnippetModal()
+        app.push_screen(modal)
+        await pilot.pause()
+        file_input = modal.query_one("#file-input")
+        assert file_input.suggester is not None
+        assert isinstance(file_input.suggester, PathSuggester)

@@ -74,6 +74,9 @@ def _sanitize_css_id(raw: str) -> str:
 
 MODAL_BASE_CSS = """
 .modal-dialog {
+    layout: grid;
+    grid-size: 1 3;
+    grid-rows: auto 1fr auto;
     padding: 1 2;
     width: 70;
     height: auto;
@@ -90,9 +93,7 @@ MODAL_BASE_CSS = """
     text-style: bold;
 }
 .modal-body {
-    height: auto;
-    max-height: 1fr;
-    min-height: 2;
+    height: 100%;
 }
 .modal-actions {
     height: auto;
@@ -315,7 +316,8 @@ class ConfirmDeleteModal(ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-dialog", classes="modal-dialog modal-compact"):
             yield Label(f"🗑  Delete '{self._title}' ({self._snippet_id})?", classes="modal-title")
-            yield Label("This action cannot be undone.")
+            with VerticalScroll(classes="modal-body"):
+                yield Label("This action cannot be undone.")
             with Horizontal(classes="modal-actions"):
                 yield Button("Delete", variant="error", id="confirm-btn")
                 yield Button("Cancel", variant="primary", id="cancel-btn")
@@ -544,12 +546,12 @@ class SettingsModal(ModalScreen[dict]):
                 for fmt_name, fmt_cfg in self._id_formats.items():
                     current_color = fmt_cfg.get("color", "cyan")
                     safe_name = _sanitize_css_id(fmt_name)
+                    yield Label(f"  {fmt_name}:")
                     yield Select(
                         [(name.title(), name) for name in ACCENT_COLORS],
                         value=current_color,
                         allow_blank=False,
                         id=f"fmt-color-{safe_name}",
-                        prompt=f"{fmt_name} color",
                     )
             with Horizontal(classes="modal-actions"):
                 yield Button("Apply", variant="success", id="apply-btn")
