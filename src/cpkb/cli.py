@@ -1375,6 +1375,60 @@ def cmd_copy(args: argparse.Namespace) -> None:
 # CLI Entry Point
 # ---------------------------------------------------------------------------
 
+def cmd_install_completions(args: argparse.Namespace) -> None:
+    """Install shell auto-completions to the user's config profile."""
+    import sys
+    import os
+    import importlib.resources
+    from pathlib import Path
+
+    shell = os.environ.get("SHELL", "")
+    if "bash" in shell:
+        shell_name = "bash"
+        rc_file = Path.home() / ".bashrc"
+    elif "zsh" in shell:
+        shell_name = "zsh"
+        rc_file = Path.home() / ".zshrc"
+    elif "fish" in shell:
+        shell_name = "fish"
+        rc_file = Path.home() / ".config" / "fish" / "config.fish"
+    else:
+        print(f"Unsupported or undetected shell: {shell}")
+        print("Please manually source the completion scripts from extras/completions.")
+        return
+
+    print(f"Detected shell: {shell_name}")
+    try:
+        if sys.version_info >= (3, 9):
+            content = importlib.resources.files("cpkb.completions").joinpath(f"cpkb.{shell_name}").read_text()
+        else:
+            content = importlib.resources.read_text("cpkb.completions", f"cpkb.{shell_name}")
+    except Exception as e:
+        print(f"Error reading completion script: {e}")
+        return
+
+    # Write the script to ~/.local/share/cpkb/completions/
+    comp_dir = APP_DIR / "completions"
+    comp_dir.mkdir(exist_ok=True, parents=True)
+    comp_file = comp_dir / f"cpkb.{shell_name}"
+    comp_file.write_text(content)
+
+    source_cmd = f"\nsource {comp_file}\n"
+    
+    if rc_file.exists():
+        current_rc = rc_file.read_text()
+        if f"source {comp_file}" in current_rc:
+            print(f"Completions already installed in {rc_file}.")
+            return
+            
+    rc_file.parent.mkdir(exist_ok=True, parents=True)
+    with rc_file.open("a") as f:
+        f.write(source_cmd)
+    
+    print(f"Successfully installed completions to {rc_file}")
+    print(f"Please restart your shell or run: source {rc_file}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="cpkb", description="Competitive Programming Knowledge Base")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -1508,6 +1562,9 @@ def main() -> None:
 
     parser_sync = subparsers.add_parser("sync", help="Sync database to Git remote (or rsync)")
     parser_sync.set_defaults(func=cmd_sync)
+
+    parser_install_completions = subparsers.add_parser("install-completions", help="Install shell auto-completions")
+    parser_install_completions.set_defaults(func=cmd_install_completions)
 
     # V2 Commands
     parser_tui = subparsers.add_parser("tui", help="Launch the Textual TUI")

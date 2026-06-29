@@ -1,1 +1,2 @@
-recursive-include integrations *
+recursive-include extras *
+recursive-include src/cpkb/completions *

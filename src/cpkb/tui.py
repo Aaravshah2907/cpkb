@@ -175,10 +175,13 @@ class AddSnippetModal(ModalScreen[dict]):
             def check_result(result: dict | None) -> None:
                 if result:
                     fmt_name = result["name"]
-                    self._id_formats[fmt_name] = {
-                        "prefix": result["prefix"],
-                        "width": result["width"]
-                    }
+                    if "pattern" in result:
+                        self._id_formats[fmt_name] = {"pattern": result["pattern"]}
+                    else:
+                        self._id_formats[fmt_name] = {
+                            "prefix": result["prefix"],
+                            "width": result["width"]
+                        }
                     # Save to config
                     config = load_config(APP_DIR)
                     snippets_cfg = config.setdefault("snippets", {})
@@ -364,6 +367,10 @@ class NewFormatModal(ModalScreen[dict]):
             yield Label("✨ Create New Format", classes="modal-title")
             yield Label("Format Name (e.g. graph):")
             yield Input(placeholder="graph", id="format-name-input")
+            yield Label("--- OR ---")
+            yield Label("Custom Pattern (e.g. ALG-####-v2):")
+            yield Input(placeholder="ALG-####-v2", id="format-pattern-input")
+            yield Label("--- OR ---")
             yield Label("Prefix (e.g. GR):")
             yield Input(placeholder="GR", id="format-prefix-input")
             yield Label("Width (number of digits, e.g. 4):")
@@ -375,16 +382,30 @@ class NewFormatModal(ModalScreen[dict]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save-btn":
             name = self.query_one("#format-name-input", Input).value.strip()
+            pattern = self.query_one("#format-pattern-input", Input).value.strip()
             prefix = self.query_one("#format-prefix-input", Input).value.strip()
             width = self.query_one("#format-width-input", Input).value.strip()
-            if name and prefix and width.isdigit():
+            
+            if not name:
+                self.notify("Format Name is required", severity="error")
+                return
+                
+            if pattern:
+                if "#" not in pattern:
+                    self.notify("Pattern must include at least one # placeholder", severity="error")
+                    return
+                self.dismiss({
+                    "name": name,
+                    "pattern": pattern
+                })
+            elif prefix and width.isdigit():
                 self.dismiss({
                     "name": name,
                     "prefix": prefix,
                     "width": int(width)
                 })
             else:
-                self.notify("Name, Prefix, and Width (numeric) are required", severity="error")
+                self.notify("Provide either a Pattern OR Prefix and numeric Width", severity="error")
         else:
             self.dismiss(None)
 

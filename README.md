@@ -127,23 +127,29 @@ CPKB includes several optional extras to integrate seamlessly into your workflow
 - **Neovim**: A Telescope extension for querying and inserting snippets inside Neovim. Located in [extras/nvim](extras/nvim). Add it to your Neovim config and load the `cpkb` telescope extension.
 
 ### Shell Completions
-- **Bash, Zsh, and Fish**: Auto-completion scripts for CLI subcommands and dynamic snippet IDs. Located in [extras/completions](extras/completions). 
+- **Bash, Zsh, and Fish**: Auto-completion scripts for CLI subcommands and dynamic snippet IDs. Located in [src/cpkb/completions](src/cpkb/completions). 
 
-To enable tab completions, add the appropriate line to your shell's configuration file (replace `/path/to/cpkb` with the actual path to the repository):
+To automatically install tab completions for your active shell, run:
+```bash
+cpkb install-completions
+```
+This will detect your shell and append the necessary `source` command to your profile (e.g., `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`).
+
+If you prefer to install them manually, you can source the appropriate script directly:
 
 **Bash** (`~/.bashrc`):
 ```bash
-source /path/to/cpkb/extras/completions/cpkb.bash
+source /path/to/cpkb/src/cpkb/completions/cpkb.bash
 ```
 
 **Zsh** (`~/.zshrc`):
 ```zsh
-source /path/to/cpkb/extras/completions/cpkb.zsh
+source /path/to/cpkb/src/cpkb/completions/cpkb.zsh
 ```
 
 **Fish** (`~/.config/fish/config.fish`):
 ```fish
-source /path/to/cpkb/extras/completions/cpkb.fish
+source /path/to/cpkb/src/cpkb/completions/cpkb.fish
 ```
 
 ### SketchyBar (macOS)

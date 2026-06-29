@@ -872,3 +872,46 @@ def test_db_repository_functions(temp_db):
     # delete_snippet
     db.delete_snippet(cursor, temp_db, sid)
     assert db.get_snippet(cursor, sid) is None
+
+
+def test_cmd_id_format_list(temp_db, capsys):
+    """Test listing configured ID formats."""
+    cli.cmd_id_format_list(MagicMock())
+    captured = capsys.readouterr()
+    assert "default" in captured.out
+    assert "CP#" in captured.out
+
+
+def test_cmd_id_format_add_with_pattern(temp_db, capsys):
+    """Test adding an ID format with a custom pattern."""
+    args = MagicMock()
+    args.name = "custom"
+    args.pattern = "CUST-####"
+    args.prefix = None
+    args.default = False
+    
+    cli.cmd_id_format_add(args)
+    captured = capsys.readouterr()
+    assert "Saved ID format 'custom'" in captured.out
+    
+    config = cpkb_config.load_config(db.APP_DIR)
+    assert config["snippets"]["id_formats"]["custom"]["pattern"] == "CUST-####"
+
+def test_cmd_id_format_add_with_prefix(temp_db, capsys):
+    """Test adding an ID format with legacy prefix and width."""
+    args = MagicMock()
+    args.name = "legacy"
+    args.pattern = None
+    args.prefix = "LEG-"
+    args.width = "4"
+    args.default = True
+    
+    cli.cmd_id_format_add(args)
+    captured = capsys.readouterr()
+    assert "Saved ID format 'legacy'" in captured.out
+    assert "Default ID format set to 'legacy'" in captured.out
+    
+    config = cpkb_config.load_config(db.APP_DIR)
+    assert config["snippets"]["id_formats"]["legacy"]["prefix"] == "LEG-"
+    assert config["snippets"]["id_formats"]["legacy"]["width"] == 4
+    assert config["snippets"]["default_id_format"] == "legacy"
