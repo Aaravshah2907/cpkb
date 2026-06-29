@@ -172,7 +172,7 @@ def as_int(value, default, minimum=0):
 
 config = {
     "config_version": 1,
-    "app_version": "2.2.1",
+    "app_version": "2.2.2",
     "default_language": sys.argv[2] or "cpp",
     "display": {
         "theme": sys.argv[5] or "textual-dark",
