@@ -233,6 +233,15 @@ cpkb id-format default algo
 - `cpkb encrypt-db`: Encrypt the database with a password (PBKDF2 + Fernet). Requires optional encryption support.
 - `cpkb decrypt-db`: Decrypt the database by entering your password. Requires optional encryption support.
 
+### TUI Customization
+The Textual TUI includes a rich **Settings** menu (`Ctrl+,`) where you can deeply customize the interface:
+- **Custom Themes**: Create a completely custom color theme (backgrounds, foregrounds, boost, accents) right from the TUI.
+- **Dynamic Layouts**: Toggle between Vertical and Horizontal pane layouts, and adjust the exact width mapping on-the-fly (`[` and `]`).
+- **Format Colors**: Assign standard accent colors or specific hex codes (e.g. `#ff6347`) to particular snippet ID formats for colorful organization.
+- **Border Styles**: Pick border aesthetics for panes (solid, dashed, heavy, thick, round).
+- **Tag Filtering**: Filter the snippet list by a specific tag using the `f` shortcut, or explore all shortcuts through the Help Menu (`?`).
+
+
 ## Directory Structure
 
 Data is kept completely separate from the code repo. The application automatically creates the required directories on first run:

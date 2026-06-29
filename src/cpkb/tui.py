@@ -596,6 +596,58 @@ class SettingsModal(ModalScreen[dict]):
             self.dismiss(None)
 
 
+class HelpModal(ModalScreen[None]):
+    """A modal to display keybindings."""
+
+    def __init__(self, bindings: list[tuple[str, str, str, bool]]):
+        super().__init__()
+        self._bindings_list = bindings
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-dialog modal-compact"):
+            yield Label("Help - Keybindings", classes="modal-title")
+            with VerticalScroll(classes="modal-body"):
+                markdown_text = "| Action | Key | Description |\n|---|---|---|\n"
+                for action, key, desc, show in self._bindings_list:
+                    markdown_text += f"| `{action}` | **{key}** | {desc} |\n"
+                yield Markdown(markdown_text)
+            with Horizontal(classes="modal-actions"):
+                yield Button("Close", variant="primary", id="close-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "close-btn":
+            self.dismiss(None)
+
+
+class FilterTagModal(ModalScreen[str]):
+    """A modal to select a tag for filtering."""
+
+    def __init__(self, tags: list[str]):
+        super().__init__()
+        self._tags = tags
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-dialog modal-compact"):
+            yield Label("Filter by Tag", classes="modal-title")
+            with VerticalScroll(classes="modal-body"):
+                if not self._tags:
+                    yield Label("No tags available.")
+                else:
+                    options = [("All (Clear filter)", "")] + [(t, t) for t in self._tags]
+                    yield Select(options, allow_blank=False, id="tag-select")
+            with Horizontal(classes="modal-actions"):
+                yield Button("Filter", variant="success", id="filter-btn")
+                yield Button("Cancel", variant="error", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "filter-btn":
+            if self._tags:
+                self.dismiss(str(self.query_one("#tag-select", Select).value))
+            else:
+                self.dismiss("")
+        elif event.button.id == "cancel-btn":
+            self.dismiss("")
+
 # ---------------------------------------------------------------------------
 # Main Application
 # ---------------------------------------------------------------------------
@@ -617,6 +669,11 @@ class SnippetApp(App):
     ListItem {
         padding: 1;
     }
+    #tag-filter-label {
+        display: none;
+        color: $warning;
+        padding: 0 1;
+    }
     """
 
     left_pane_width: reactive[int] = reactive(35)
@@ -628,7 +685,7 @@ class SnippetApp(App):
         ("focus_search", "/", "Search", True),
         ("add_snippet", "ctrl+a", "Add", True),
         ("edit_snippet", "ctrl+e", "Edit", True),
-        ("use_snippet", "ctrl+u", "Use", True),
+        ("use_snippet", "ctrl+u", "Use", False),
         ("delete_snippet", "ctrl+d", "Delete", True),
         ("edit_tags", "ctrl+t", "Edit Tags", True),
         ("settings", "ctrl+comma", "Settings", True),
@@ -637,17 +694,23 @@ class SnippetApp(App):
         ("page_detail_down", "pagedown", "Detail Page Down", False),
         ("page_detail_up", "pageup", "Detail Page Up", False),
         ("shrink_left", "left_square_bracket", "Shrink Left", False),
-        ("grow_left", "right_square_bracket", "Grow Left", False),
+        ("grow_left", "right_square_bracket", "Grow Left", True),
+        ("show_help", "?", "Help", True),
+        ("filter_tag", "f", "Filter Tag", True),
+        ("focus_next", "tab", "Switch Panes", True),
     ]
 
     BINDINGS = []
+    
+    active_tag_filter: str = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
-        # the container class will be updated in _apply_display_config using CSS, so we just use Horizontal here
+        # the container class will be updated in _update_layout_styles using CSS, so we just use Horizontal here
         with Horizontal(id="main-container"):
             with Vertical(id="left-pane"):
                 yield Input(placeholder="Search snippets (/)", id="search-input")
+                yield Label("", id="tag-filter-label")
                 yield ListView(id="snippet-list")
             with Vertical(id="right-pane"):
                 yield Markdown("Select a snippet from the list to view its contents.", id="snippet-view")
@@ -852,14 +915,64 @@ class SnippetApp(App):
         # Load custom keybindings
         config = load_config(APP_DIR)
         kb = config.get("keybindings", DEFAULT_CONFIG["keybindings"])
+        self.current_keybindings = {}
         for action, default_key, desc, show in self._DEFAULT_BINDINGS:
             key = kb.get(action, default_key)
+            self.current_keybindings[action] = key
             self.bind(key, action, description=desc, show=show)
             
         await self.action_refresh()
 
     def action_focus_search(self) -> None:
         self.query_one("#search-input", Input).focus()
+
+    async def action_show_help(self) -> None:
+        """Show the help modal."""
+        self.push_screen(HelpModal(self._DEFAULT_BINDINGS))
+
+    async def action_filter_tag(self) -> None:
+        """Show the tag filter modal."""
+        # gather all unique tags
+        self.cursor.execute("SELECT id FROM snippets")
+        all_ids = [r[0] for r in self.cursor.fetchall()]
+        unique_tags = set()
+        for sid in all_ids:
+            fields = get_snippet_fields(self.cursor, sid)
+            for t in fields["tags"]:
+                unique_tags.add(t)
+                
+        def check_result(result: str | None) -> None:
+            if result is not None:
+                self.active_tag_filter = result
+                tag_label = self.query_one("#tag-filter-label", Label)
+                if result:
+                    tag_label.update(f"Filtered by tag: {result}")
+                    tag_label.styles.display = "block"
+                else:
+                    tag_label.styles.display = "none"
+                self.run_worker(self.action_refresh(self.query_one("#search-input", Input).value))
+
+        self.push_screen(FilterTagModal(sorted(list(unique_tags))), check_result)
+
+    from textual import events
+    def on_key(self, event: events.Key) -> None:
+        # Prevent ListView from eating single char shortcuts
+        if isinstance(self.focused, (Input, TextArea)):
+            return
+
+        focus_key = self.current_keybindings.get("focus_search")
+        help_key = self.current_keybindings.get("show_help")
+        filter_key = self.current_keybindings.get("filter_tag")
+
+        if event.character == focus_key or event.key == focus_key:
+            self.action_focus_search()
+            event.stop()
+        elif event.character == help_key or event.key == help_key:
+            self.run_worker(self.action_show_help())
+            event.stop()
+        elif event.character == filter_key or event.key == filter_key:
+            self.run_worker(self.action_filter_tag())
+            event.stop()
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "search-input":
@@ -924,6 +1037,14 @@ class SnippetApp(App):
         else:
             self.cursor.execute("SELECT id, title FROM snippets ORDER BY created_at DESC")
             rows = self.cursor.fetchall()
+            
+        if self.active_tag_filter:
+            filtered_rows = []
+            for row in rows:
+                fields = get_snippet_fields(self.cursor, row[0])
+                if self.active_tag_filter in fields["tags"]:
+                    filtered_rows.append(row)
+            rows = filtered_rows
 
         self._widget_id_to_snippet = {}
         for row in rows:
