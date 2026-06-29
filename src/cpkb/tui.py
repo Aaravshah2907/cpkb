@@ -74,12 +74,9 @@ def _sanitize_css_id(raw: str) -> str:
 
 MODAL_BASE_CSS = """
 .modal-dialog {
-    layout: grid;
-    grid-size: 1 3;
-    grid-rows: auto 1fr auto;
     padding: 1 2;
     width: 70;
-    height: auto;
+    height: 80%;
     max-width: 90%;
     max-height: 90%;
     border: thick $background 80%;
@@ -91,11 +88,13 @@ MODAL_BASE_CSS = """
 .modal-title {
     margin-top: 0;
     text-style: bold;
+    height: auto;
 }
 .modal-body {
-    height: 100%;
+    height: 1fr;
 }
 .modal-actions {
+    dock: bottom;
     height: auto;
     min-height: 3;
     margin-top: 1;
@@ -105,7 +104,7 @@ MODAL_BASE_CSS = """
 }
 .modal-compact {
     width: 60;
-    height: auto;
+    height: 70%;
     max-height: 85%;
 }
 .modal-wide {
@@ -546,12 +545,18 @@ class SettingsModal(ModalScreen[dict]):
                 for fmt_name, fmt_cfg in self._id_formats.items():
                     current_color = fmt_cfg.get("color", "cyan")
                     safe_name = _sanitize_css_id(fmt_name)
+                    is_custom_hex = current_color not in ACCENT_COLORS
                     yield Label(f"  {fmt_name}:")
                     yield Select(
                         [(name.title(), name) for name in ACCENT_COLORS],
-                        value=current_color,
+                        value=current_color if not is_custom_hex else "cyan",
                         allow_blank=False,
                         id=f"fmt-color-{safe_name}",
+                    )
+                    yield Input(
+                        value=current_color if is_custom_hex else "",
+                        placeholder="Custom hex (e.g. #ff6347)",
+                        id=f"fmt-hex-{safe_name}",
                     )
             with Horizontal(classes="modal-actions"):
                 yield Button("Apply", variant="success", id="apply-btn")
@@ -574,7 +579,11 @@ class SettingsModal(ModalScreen[dict]):
             format_colors = {}
             for fmt_name in self._id_formats:
                 safe_name = _sanitize_css_id(fmt_name)
-                format_colors[fmt_name] = str(self.query_one(f"#fmt-color-{safe_name}", Select).value)
+                custom_hex = self.query_one(f"#fmt-hex-{safe_name}", Input).value.strip()
+                if custom_hex:
+                    format_colors[fmt_name] = custom_hex
+                else:
+                    format_colors[fmt_name] = str(self.query_one(f"#fmt-color-{safe_name}", Select).value)
             
             self.dismiss({
                 "theme": str(self.query_one("#theme-select", Select).value),

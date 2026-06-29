@@ -664,3 +664,93 @@ async def test_use_snippet_modal_has_path_suggester(mock_db):
         file_input = modal.query_one("#file-input")
         assert file_input.suggester is not None
         assert isinstance(file_input.suggester, PathSuggester)
+
+
+# ---------------------------------------------------------------------------
+# Format color: custom hex input tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_settings_format_color_has_custom_hex_input(mock_db):
+    """Verify each format has both a Select and a custom hex Input."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        id_formats = {
+            "default": {"color": "cyan", "prefix": "CP", "width": "auto"},
+        }
+        modal = SettingsModal(
+            ["textual-dark"], "textual-dark", "cyan", id_formats,
+        )
+        app.push_screen(modal)
+        await pilot.pause()
+        assert modal.query_one("#fmt-color-default") is not None
+        assert modal.query_one("#fmt-hex-default") is not None
+
+
+@pytest.mark.asyncio
+async def test_settings_custom_hex_takes_priority(mock_db):
+    """Verify custom hex Input value is used over Select when filled."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        id_formats = {
+            "default": {"color": "cyan", "prefix": "CP", "width": "auto"},
+        }
+        results = []
+
+        def on_dismiss(result):
+            results.append(result)
+
+        modal = SettingsModal(
+            ["textual-dark"], "textual-dark", "cyan", id_formats,
+        )
+        app.push_screen(modal, on_dismiss)
+        await pilot.pause()
+        # Type a custom hex into the input
+        modal.query_one("#fmt-hex-default").value = "#ff6347"
+        modal.query_one("#apply-btn").press()
+        await pilot.pause()
+        assert len(results) == 1
+        assert results[0]["format_colors"]["default"] == "#ff6347"
+
+
+@pytest.mark.asyncio
+async def test_settings_select_used_when_hex_empty(mock_db):
+    """Verify Select value is used when custom hex Input is empty."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        id_formats = {
+            "default": {"color": "pink", "prefix": "CP", "width": "auto"},
+        }
+        results = []
+
+        def on_dismiss(result):
+            results.append(result)
+
+        modal = SettingsModal(
+            ["textual-dark"], "textual-dark", "cyan", id_formats,
+        )
+        app.push_screen(modal, on_dismiss)
+        await pilot.pause()
+        # Leave hex empty, just use the Select
+        assert modal.query_one("#fmt-hex-default").value == ""
+        modal.query_one("#apply-btn").press()
+        await pilot.pause()
+        assert len(results) == 1
+        assert results[0]["format_colors"]["default"] == "pink"
+
+
+@pytest.mark.asyncio
+async def test_settings_existing_custom_hex_prefills_input(mock_db):
+    """Verify a previously saved custom hex color pre-fills the Input."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        id_formats = {
+            "default": {"color": "#ff6347", "prefix": "CP", "width": "auto"},
+        }
+        modal = SettingsModal(
+            ["textual-dark"], "textual-dark", "cyan", id_formats,
+        )
+        app.push_screen(modal)
+        await pilot.pause()
+        # The hex input should be pre-filled with the custom color
+        assert modal.query_one("#fmt-hex-default").value == "#ff6347"
