@@ -245,6 +245,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
         accent_color = config.get("display", {}).get("accent_color", "cyan")
         load_cpp = args.load_defaults
         enable_encryption = bool(args.enable_encryption)
+        install_completions = bool(args.install_completions)
     else:
         default_language = _prompt_default(
             "Default programming language",
@@ -269,6 +270,9 @@ def cmd_setup(args: argparse.Namespace) -> None:
         load_cpp = _as_bool(_prompt_default("Load bundled C++ cheatsheet on setup? (true/false)", "false"))
         enable_encryption = _as_bool(
             _prompt_default("Enable encryption commands? Requires optional cryptography dependency. (true/false)", "false")
+        )
+        install_completions = _as_bool(
+            _prompt_default("Install shell auto-completions? (true/false)", "false")
         )
 
     APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -312,6 +316,10 @@ def cmd_setup(args: argparse.Namespace) -> None:
             id_format = None
 
         cmd_import(ImportDefaultsArgs())
+
+    if install_completions:
+        print("\n--- Installing Shell Completions ---")
+        cmd_install_completions(args)
 
     print("\nCPKB setup complete.")
     print(f"Config written to: {config_path}")
@@ -1552,6 +1560,7 @@ def main() -> None:
     parser_setup.add_argument("--reset-config", action="store_true", help="Use factory config defaults during setup without deleting snippets")
     parser_setup.add_argument("--load-defaults", action="store_true", help="Import bundled C++ STL cheatsheets")
     parser_setup.add_argument("--enable-encryption", action="store_true", help="Enable encryption commands in config")
+    parser_setup.add_argument("--install-completions", action="store_true", help="Install shell auto-completions during setup")
     parser_setup.set_defaults(func=cmd_setup)
 
     parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database with a password")
@@ -1597,6 +1606,14 @@ def main() -> None:
             print_update_notice()
 
 
+def _is_newer_version(latest: str, current: str) -> bool:
+    if current == "unknown":
+        return False
+    try:
+        return tuple(int(x) for x in latest.split('.') if x.isdigit()) > tuple(int(x) for x in current.split('.') if x.isdigit())
+    except Exception:
+        return latest != current
+
 def check_for_updates_background() -> threading.Thread:
     """Check PyPI for updates in a background thread once every 24 hours."""
     def _check():
@@ -1621,7 +1638,7 @@ def check_for_updates_background() -> threading.Thread:
                 
                 check_file.write_text(json.dumps({
                     "last_checked": now,
-                    "latest_version": latest_version if latest_version != __version__ else None,
+                    "latest_version": latest_version if _is_newer_version(latest_version, __version__) else None,
                     "current_version": __version__
                 }))
         except Exception:
@@ -1639,7 +1656,7 @@ def print_update_notice() -> None:
         try:
             data = json.loads(check_file.read_text())
             latest = data.get("latest_version")
-            if latest and latest != __version__:
+            if latest and _is_newer_version(latest, __version__):
                 print(f"\n\033[33mUpdate available: {__version__} -> {latest}\033[0m")
                 print("Run 'pip install --upgrade cpkb' or 'brew upgrade cpkb' to update.")
         except Exception:

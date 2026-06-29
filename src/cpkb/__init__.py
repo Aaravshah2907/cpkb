@@ -2,4 +2,8 @@
 CPKB - Competitive Programming Knowledge Base
 """
 
-__version__ = "2.2.2"
+try:
+    import importlib.metadata
+    __version__ = importlib.metadata.version("cpkb")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "unknown"

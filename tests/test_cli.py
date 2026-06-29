@@ -180,6 +180,7 @@ def test_cmd_setup_yes_creates_config_and_directories(temp_db, capsys):
     args.load_defaults = False
     args.enable_encryption = False
     args.reset_config = False
+    args.install_completions = False
 
     cli.cmd_setup(args)
 
@@ -206,6 +207,7 @@ def test_cmd_setup_can_import_defaults(temp_db):
     args.load_defaults = True
     args.enable_encryption = False
     args.reset_config = False
+    args.install_completions = False
 
     cli.cmd_setup(args)
 
@@ -224,6 +226,7 @@ def test_cmd_setup_preserves_existing_snippets(temp_db):
     args.load_defaults = False
     args.enable_encryption = False
     args.reset_config = True
+    args.install_completions = False
 
     cli.cmd_setup(args)
 
@@ -249,12 +252,28 @@ def test_cmd_setup_reset_config_uses_factory_defaults(temp_db):
     args.load_defaults = False
     args.enable_encryption = False
     args.reset_config = True
+    args.install_completions = False
 
     cli.cmd_setup(args)
 
     saved = cpkb_config.load_config(db.APP_DIR)
     assert saved["default_language"] == "cpp"
     assert saved["snippets"]["max_number"] == 9999
+
+
+@patch("cpkb.cli.cmd_install_completions")
+def test_cmd_setup_install_completions(mock_install, temp_db):
+    """Test setup command correctly delegates to completion installation."""
+    args = MagicMock()
+    args.yes = True
+    args.load_defaults = False
+    args.enable_encryption = False
+    args.reset_config = True
+    args.install_completions = True
+
+    cli.cmd_setup(args)
+
+    mock_install.assert_called_once_with(args)
 
 
 def test_cmd_tui_missing_textual_reports_active_python(capsys):
