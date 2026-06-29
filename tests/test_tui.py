@@ -8,6 +8,7 @@ from cpkb.tui import (
     ConfirmDeleteModal,
     EditSnippetModal,
     EditTagsModal,
+    NewFormatModal,
     SettingsModal,
     SnippetApp,
     UseSnippetModal,
@@ -202,6 +203,7 @@ async def test_settings_modal_shows_theme_and_accent_controls(mock_db):
         (ConfirmDeleteModal("CP0001", "Title"), ["#confirm-btn", "#cancel-btn"]),
         (EditTagsModal("graph, dp"), ["#add-btn", "#remove-btn", "#cancel-btn"]),
         (UseSnippetModal(), ["#save-btn", "#cancel-btn"]),
+        (NewFormatModal(), ["#save-btn", "#cancel-btn"]),
         (SettingsModal(["textual-dark", "dracula"], "textual-dark", "cyan", {"default": {"color": "cyan"}}), ["#apply-btn", "#cancel-btn"]),
     ],
 )
@@ -375,4 +377,37 @@ async def test_settings_modal_format_colors_with_special_names(mock_db):
         # The sanitized widget IDs should be queryable
         assert modal.query_one("#fmt-color-default") is not None
         assert modal.query_one("#fmt-color-algo_v2") is not None
+
+
+@pytest.mark.asyncio
+async def test_tui_create_new_id_format(mock_db):
+    """Verify creating a new ID format from the AddSnippetModal updates config."""
+    app = SnippetApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await app.action_add_snippet()
+        await pilot.pause()
+        
+        add_modal = app.screen
+        # Set dropdown to __new__
+        select = add_modal.query_one("#id-format-select")
+        select.value = "__new__"
+        await pilot.pause()
+        
+        # NewFormatModal should be pushed
+        new_format_modal = app.screen
+        new_format_modal.query_one("#format-name-input").value = "custom"
+        new_format_modal.query_one("#format-prefix-input").value = "CUST"
+        new_format_modal.query_one("#format-width-input").value = "3"
+        new_format_modal.query_one("#save-btn").press()
+        await pilot.pause()
+        
+        # We should be back at add_modal, and the new format should be selected
+        assert add_modal.query_one("#id-format-select").value == "custom"
+        
+        # Verify it was saved to config
+        saved = cpkb_config.load_config(db.APP_DIR)
+        assert "custom" in saved["snippets"]["id_formats"]
+        assert saved["snippets"]["id_formats"]["custom"]["prefix"] == "CUST"
+        assert saved["snippets"]["id_formats"]["custom"]["width"] == 3
 

@@ -120,6 +120,7 @@ class AddSnippetModal(ModalScreen[dict]):
                 digits = "#" * int(width) if str(width).isdigit() else "#..."
                 pattern = f"{config.get('prefix', 'CP')}{digits}"
             options.append((f"{name} ({pattern})", name))
+        options.append(("Create New Format...", "__new__"))
         return options
 
     def compose(self) -> ComposeResult:
@@ -168,6 +169,31 @@ class AddSnippetModal(ModalScreen[dict]):
                 self.notify("Title and Code are required", severity="error")
         else:
             self.dismiss(None)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "id-format-select" and event.select.value == "__new__":
+            def check_result(result: dict | None) -> None:
+                if result:
+                    fmt_name = result["name"]
+                    self._id_formats[fmt_name] = {
+                        "prefix": result["prefix"],
+                        "width": result["width"]
+                    }
+                    # Save to config
+                    config = load_config(APP_DIR)
+                    snippets_cfg = config.setdefault("snippets", {})
+                    id_formats_cfg = snippets_cfg.setdefault("id_formats", DEFAULT_CONFIG["snippets"]["id_formats"])
+                    id_formats_cfg[fmt_name] = self._id_formats[fmt_name]
+                    save_config(APP_DIR, config)
+
+                    # Update options
+                    select = self.query_one("#id-format-select", Select)
+                    select.set_options(self._format_options())
+                    select.value = fmt_name
+                else:
+                    self.query_one("#id-format-select", Select).value = self._default_id_format
+            
+            self.app.push_screen(NewFormatModal(), check_result)
 
 
 class EditSnippetModal(ModalScreen[dict]):
@@ -321,6 +347,44 @@ class UseSnippetModal(ModalScreen[dict]):
                 self.dismiss({"file": file_path})
             else:
                 self.notify("File path is required", severity="error")
+        else:
+            self.dismiss(None)
+
+
+class NewFormatModal(ModalScreen[dict]):
+    """Modal for creating a new ID format."""
+    CSS = MODAL_BASE_CSS + """
+    NewFormatModal {
+        align: center middle;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="new-format-dialog", classes="modal-dialog modal-compact"):
+            yield Label("✨ Create New Format", classes="modal-title")
+            yield Label("Format Name (e.g. graph):")
+            yield Input(placeholder="graph", id="format-name-input")
+            yield Label("Prefix (e.g. GR):")
+            yield Input(placeholder="GR", id="format-prefix-input")
+            yield Label("Width (number of digits, e.g. 4):")
+            yield Input(placeholder="4", id="format-width-input")
+            with Horizontal(classes="modal-actions"):
+                yield Button("Save", variant="success", id="save-btn")
+                yield Button("Cancel", variant="error", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save-btn":
+            name = self.query_one("#format-name-input", Input).value.strip()
+            prefix = self.query_one("#format-prefix-input", Input).value.strip()
+            width = self.query_one("#format-width-input", Input).value.strip()
+            if name and prefix and width.isdigit():
+                self.dismiss({
+                    "name": name,
+                    "prefix": prefix,
+                    "width": int(width)
+                })
+            else:
+                self.notify("Name, Prefix, and Width (numeric) are required", severity="error")
         else:
             self.dismiss(None)
 
