@@ -14,8 +14,39 @@ from .db import (
 )
 from .config import DEFAULT_CONFIG, load_config, save_config
 import platform, os
+from pathlib import Path
+from textual.suggester import Suggester
+
 if platform.system().lower() == "windows":
     os.system("")
+
+class PathSuggester(Suggester):
+    def __init__(self) -> None:
+        super().__init__(use_cache=False, case_sensitive=True)
+
+    async def get_suggestion(self, value: str) -> str | None:
+        if not value:
+            return None
+        try:
+            path = Path(value).expanduser()
+            if value.endswith(os.sep) or (os.altsep and value.endswith(os.altsep)):
+                search_dir = path
+                prefix = ""
+            else:
+                search_dir = path.parent
+                prefix = path.name
+                
+            if search_dir.exists() and search_dir.is_dir():
+                for item in search_dir.iterdir():
+                    if item.name.startswith(prefix):
+                        remainder = item.name[len(prefix):]
+                        ans = value + remainder
+                        if item.is_dir():
+                            ans += os.sep
+                        return ans
+        except Exception:
+            pass
+        return None
 
 
 ACCENT_COLORS = {
@@ -45,6 +76,7 @@ MODAL_BASE_CSS = """
 .modal-dialog {
     padding: 1 2;
     width: 70;
+    height: auto;
     max-width: 90%;
     max-height: 90%;
     border: thick $background 80%;
@@ -58,11 +90,12 @@ MODAL_BASE_CSS = """
     text-style: bold;
 }
 .modal-body {
-    height: 1fr;
-    min-height: 8;
+    height: auto;
+    max-height: 1fr;
+    min-height: 2;
 }
 .modal-actions {
-    height: 3;
+    height: auto;
     min-height: 3;
     margin-top: 1;
 }
@@ -127,6 +160,13 @@ class AddSnippetModal(ModalScreen[dict]):
         with Vertical(id="add-dialog", classes="modal-dialog modal-wide"):
             yield Label("➕ Add New Snippet", id="add-title", classes="modal-title")
             with VerticalScroll(id="add-form-body", classes="modal-body"):
+                yield Label("ID Format:")
+                yield Select(
+                    self._format_options(),
+                    value=self._default_id_format,
+                    allow_blank=False,
+                    id="id-format-select",
+                )
                 yield Label("Title:")
                 yield Input(id="title-input")
                 yield Label("Description:")
@@ -135,13 +175,6 @@ class AddSnippetModal(ModalScreen[dict]):
                 yield Input(id="use-input")
                 yield Label("Tags (comma separated):")
                 yield Input(value=self._default_tags, id="tags-input")
-                yield Label("ID Format:")
-                yield Select(
-                    self._format_options(),
-                    value=self._default_id_format,
-                    allow_blank=False,
-                    id="id-format-select",
-                )
                 yield Label("Code:")
                 yield TextArea(id="code-input", language=self._code_language)
             with Horizontal(classes="modal-actions"):
@@ -306,10 +339,11 @@ class EditTagsModal(ModalScreen[dict]):
     def compose(self) -> ComposeResult:
         with Vertical(id="tags-dialog", classes="modal-dialog modal-compact"):
             yield Label("🏷  Edit Tags", classes="modal-title")
-            yield Label("Current Tags:")
-            yield Input(value=self._current_tags, id="current-tags-input", disabled=True)
-            yield Label("Tag:")
-            yield Input(placeholder="tag name", id="tag-input")
+            with VerticalScroll(classes="modal-body"):
+                yield Label("Current Tags:")
+                yield Input(value=self._current_tags, id="current-tags-input", disabled=True)
+                yield Label("Tag:")
+                yield Input(placeholder="tag name", id="tag-input")
             with Horizontal(classes="modal-actions"):
                 yield Button("Add", variant="success", id="add-btn")
                 yield Button("Remove", variant="warning", id="remove-btn")
@@ -337,8 +371,9 @@ class UseSnippetModal(ModalScreen[dict]):
     def compose(self) -> ComposeResult:
         with Vertical(id="use-dialog", classes="modal-dialog modal-compact"):
             yield Label("📝 Record Usage", classes="modal-title")
-            yield Label("File path where used:")
-            yield Input(id="file-input")
+            with VerticalScroll(classes="modal-body"):
+                yield Label("File path where used:")
+                yield Input(id="file-input", suggester=PathSuggester())
             with Horizontal(classes="modal-actions"):
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
@@ -365,16 +400,17 @@ class NewFormatModal(ModalScreen[dict]):
     def compose(self) -> ComposeResult:
         with Vertical(id="new-format-dialog", classes="modal-dialog modal-compact"):
             yield Label("✨ Create New Format", classes="modal-title")
-            yield Label("Format Name (e.g. graph):")
-            yield Input(placeholder="graph", id="format-name-input")
-            yield Label("--- OR ---")
-            yield Label("Custom Pattern (e.g. ALG-####-v2):")
-            yield Input(placeholder="ALG-####-v2", id="format-pattern-input")
-            yield Label("--- OR ---")
-            yield Label("Prefix (e.g. GR):")
-            yield Input(placeholder="GR", id="format-prefix-input")
-            yield Label("Width (number of digits, e.g. 4):")
-            yield Input(placeholder="4", id="format-width-input")
+            with VerticalScroll(classes="modal-body"):
+                yield Label("Format Name (e.g. graph):")
+                yield Input(placeholder="graph", id="format-name-input")
+                yield Label("--- OR ---")
+                yield Label("Custom Pattern (e.g. ALG-####-v2):")
+                yield Input(placeholder="ALG-####-v2", id="format-pattern-input")
+                yield Label("--- OR ---")
+                yield Label("Prefix (e.g. GR):")
+                yield Input(placeholder="GR", id="format-prefix-input")
+                yield Label("Width (number of digits, e.g. 4):")
+                yield Input(placeholder="4", id="format-width-input")
             with Horizontal(classes="modal-actions"):
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
@@ -410,6 +446,46 @@ class NewFormatModal(ModalScreen[dict]):
             self.dismiss(None)
 
 
+class CustomThemeModal(ModalScreen[dict]):
+    """Modal for editing custom theme colors."""
+    CSS = MODAL_BASE_CSS + """
+    CustomThemeModal {
+        align: center middle;
+    }
+    """
+    
+    def __init__(self, current_theme: dict) -> None:
+        super().__init__()
+        self._current_theme = current_theme
+        self._keys = [
+            "primary", "secondary", "warning", "error", "success",
+            "accent", "foreground", "background", "surface", "panel", "boost"
+        ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="custom-theme-dialog", classes="modal-dialog modal-wide"):
+            yield Label("🎨 Edit Custom Theme", classes="modal-title")
+            with VerticalScroll(classes="modal-body"):
+                for key in self._keys:
+                    yield Label(f"{key.title()} Color:")
+                    yield Input(value=str(self._current_theme.get(key, "")), id=f"color-{key}")
+                yield Label("Dark Mode:")
+                yield Select([("Yes", True), ("No", False)], value=self._current_theme.get("dark", True), allow_blank=False, id="color-dark")
+            with Horizontal(classes="modal-actions"):
+                yield Button("Save", variant="success", id="save-btn")
+                yield Button("Cancel", variant="error", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save-btn":
+            result = {}
+            for key in self._keys:
+                result[key] = str(self.query_one(f"#color-{key}", Input).value.strip())
+            result["dark"] = bool(self.query_one("#color-dark", Select).value)
+            self.dismiss(result)
+        elif event.button.id == "cancel-btn":
+            self.dismiss(None)
+
+
 class SettingsModal(ModalScreen[dict]):
     """Modal for updating persistent display settings."""
     CSS = MODAL_BASE_CSS + """
@@ -434,51 +510,65 @@ class SettingsModal(ModalScreen[dict]):
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-dialog", classes="modal-dialog modal-compact"):
             yield Label("Settings", classes="modal-title")
-            yield Label("Theme:")
-            yield Select(
-                [(theme, theme) for theme in self._themes],
-                value=self._current_theme,
-                allow_blank=False,
-                id="theme-select",
-            )
-            yield Label("Accent:")
-            yield Select(
-                [(name.title(), name) for name in ACCENT_COLORS],
-                value=self._current_accent,
-                allow_blank=False,
-                id="accent-select",
-            )
-            yield Label("Layout:")
-            yield Select(
-                [("Horizontal", "horizontal"), ("Vertical", "vertical")],
-                value=self._layout,
-                allow_blank=False,
-                id="layout-select",
-            )
-            yield Label("Border Style:")
-            yield Select(
-                [(b.title(), b) for b in ["solid", "heavy", "rounded", "double"]],
-                value=self._border_style,
-                allow_blank=False,
-                id="border-select",
-            )
-            yield Label("Format Colors:")
-            for fmt_name, fmt_cfg in self._id_formats.items():
-                current_color = fmt_cfg.get("color", "cyan")
-                safe_name = _sanitize_css_id(fmt_name)
+            with VerticalScroll(classes="modal-body"):
+                yield Label("Theme:")
+                yield Select(
+                    [(theme, theme) for theme in self._themes],
+                    value=self._current_theme,
+                    allow_blank=False,
+                    id="theme-select",
+                )
+                yield Button("Edit Custom Theme", id="edit-custom-theme-btn")
+                yield Label("Accent:")
                 yield Select(
                     [(name.title(), name) for name in ACCENT_COLORS],
-                    value=current_color,
+                    value=self._current_accent,
                     allow_blank=False,
-                    id=f"fmt-color-{safe_name}",
-                    prompt=f"{fmt_name} color",
+                    id="accent-select",
                 )
+                yield Label("Layout:")
+                yield Select(
+                    [("Horizontal", "horizontal"), ("Vertical", "vertical")],
+                    value=self._layout,
+                    allow_blank=False,
+                    id="layout-select",
+                )
+                yield Label("Border Style:")
+                yield Select(
+                    [(b.title(), b) for b in ["solid", "heavy", "rounded", "double"]],
+                    value=self._border_style,
+                    allow_blank=False,
+                    id="border-select",
+                )
+                yield Label("Format Colors:")
+                for fmt_name, fmt_cfg in self._id_formats.items():
+                    current_color = fmt_cfg.get("color", "cyan")
+                    safe_name = _sanitize_css_id(fmt_name)
+                    yield Select(
+                        [(name.title(), name) for name in ACCENT_COLORS],
+                        value=current_color,
+                        allow_blank=False,
+                        id=f"fmt-color-{safe_name}",
+                        prompt=f"{fmt_name} color",
+                    )
             with Horizontal(classes="modal-actions"):
                 yield Button("Apply", variant="success", id="apply-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "apply-btn":
+        if event.button.id == "edit-custom-theme-btn":
+            def check_result(result: dict | None) -> None:
+                if result:
+                    config = load_config(APP_DIR)
+                    display = config.setdefault("display", {})
+                    display["custom_theme"] = result
+                    save_config(APP_DIR, config)
+                    self.notify("Custom theme saved! Select 'Apply' to reload.")
+            
+            config = load_config(APP_DIR)
+            custom_theme = config.get("display", {}).get("custom_theme", DEFAULT_CONFIG["display"]["custom_theme"])
+            self.app.push_screen(CustomThemeModal(custom_theme), check_result)
+        elif event.button.id == "apply-btn":
             format_colors = {}
             for fmt_name in self._id_formats:
                 safe_name = _sanitize_css_id(fmt_name)
@@ -591,6 +681,36 @@ class SnippetApp(App):
         return f"cpkb-{theme}-{accent}"
 
     def _apply_display_config(self, theme: str, accent: str) -> tuple[str, str]:
+        if theme == "custom":
+            config = load_config(APP_DIR)
+            custom_cfg = config.get("display", {}).get("custom_theme", {})
+            if custom_cfg:
+                custom_theme_obj = Theme(
+                    name="cpkb-custom",
+                    primary=custom_cfg.get("primary", "#00ffff"),
+                    secondary=custom_cfg.get("secondary", "#3399ff"),
+                    warning=custom_cfg.get("warning", "#fabd2f"),
+                    error=custom_cfg.get("error", "#ff5555"),
+                    success=custom_cfg.get("success", "#4EBF71"),
+                    accent=custom_cfg.get("accent", "#00ffff"),
+                    foreground=custom_cfg.get("foreground", "#ffffff"),
+                    background=custom_cfg.get("background", "#1e1e1e"),
+                    surface=custom_cfg.get("surface", "#252526"),
+                    panel=custom_cfg.get("panel", "#2d2d30"),
+                    boost=custom_cfg.get("boost", "#333333"),
+                    dark=custom_cfg.get("dark", True),
+                )
+                if custom_theme_obj.name in self.available_themes:
+                    self.unregister_theme(custom_theme_obj.name)
+                self.register_theme(custom_theme_obj)
+                self.theme = custom_theme_obj.name
+                self.display_theme = theme
+                self.display_accent = accent
+                self._update_layout_styles(custom_theme_obj)
+                return theme, accent
+            else:
+                theme = DEFAULT_CONFIG["display"]["theme"]
+
         if theme not in self.available_themes:
             theme = DEFAULT_CONFIG["display"]["theme"]
         if accent not in ACCENT_COLORS:
@@ -623,6 +743,10 @@ class SnippetApp(App):
         self.display_theme = theme
         self.display_accent = accent
         
+        self._update_layout_styles(custom_theme)
+        return theme, accent
+
+    def _update_layout_styles(self, custom_theme: Theme) -> None:
         # update layout styles dynamically
         try:
             main_container = self.query_one("#main-container")
@@ -647,8 +771,6 @@ class SnippetApp(App):
                 right_pane.styles.width = f"{100 - self.left_pane_width}%"
         except Exception:
             pass # before mount
-            
-        return theme, accent
 
     def _save_display_config(self, theme: str, accent: str, layout: str = "horizontal", border_style: str = "solid") -> None:
         config = load_config(APP_DIR)
@@ -725,6 +847,8 @@ class SnippetApp(App):
             theme for theme in self.available_themes
             if not theme.startswith("cpkb-")
         )
+        if "custom" not in themes:
+            themes.append("custom")
 
         def check_result(result: dict | None) -> None:
             if result:
