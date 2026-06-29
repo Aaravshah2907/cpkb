@@ -64,4 +64,6 @@ _cpkb() {
     esac
 }
 
-_cpkb "$@"
+if type compdef &>/dev/null; then
+    compdef _cpkb cpkb
+fi
