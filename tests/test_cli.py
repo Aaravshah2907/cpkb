@@ -151,6 +151,21 @@ def test_cmd_search(temp_db, capsys):
     assert "BFS" not in captured.out
 
 
+def test_cmd_query_empty(temp_db, capsys):
+    """Test that cmd_query handles empty queries gracefully without SQL errors."""
+    args_add = MagicMock()
+    with patch("builtins.input", side_effect=["Dijkstra", "Shortest path", "Graphs", "graph, dp"]), \
+         patch("sys.stdin.readlines", return_value=["dijkstra_code"]):
+        cli.cmd_add(args_add)
+        
+    args_query = MagicMock()
+    args_query.query = ""
+    args_query.limit = 10
+    cli.cmd_query(args_query)
+    captured = capsys.readouterr()
+    assert "Dijkstra" in captured.out
+
+
 def test_cmd_stats(temp_db, capsys):
     """Test that cmd_stats reports correct counts."""
     args_add = MagicMock()

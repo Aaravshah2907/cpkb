@@ -823,3 +823,56 @@ async def test_tui_layout_horizontal_vertical(mock_db):
         assert main_container.styles.layout.name == "vertical"
         assert left_pane.styles.border_bottom[0] == "dashed"
         assert left_pane.styles.border_right[0] in ("", "none")
+
+
+def test_get_cosmere_colors(tmp_path):
+    """Test get_cosmere_colors parses the shell script correctly."""
+    from cpkb.tui import get_cosmere_colors
+    
+    script_path = tmp_path / "cosmere_colors.sh"
+    script_path.write_text("export SAPPHIRE=0xff00BFFF\nexport RUIN=0xaa1A0A0A\n")
+    
+    with patch("os.path.expanduser", return_value=str(script_path)):
+        colors = get_cosmere_colors()
+        
+    assert "sapphire" in colors
+    assert colors["sapphire"] == "#00bfff"
+    assert "ruin" in colors
+    assert colors["ruin"] == "#1a0a0a"
+
+
+def test_resolve_color():
+    """Test resolve_color correctly checks ACCENT_COLORS and COSMERE_COLORS."""
+    from cpkb import tui
+    
+    # Backup original dictionaries
+    orig_accent = tui.ACCENT_COLORS.copy()
+    orig_cosmere = tui.COSMERE_COLORS.copy()
+    
+    try:
+        tui.ACCENT_COLORS.clear()
+        tui.COSMERE_COLORS.clear()
+        
+        tui.ACCENT_COLORS["cyan"] = "#00ffff"
+        tui.COSMERE_COLORS["sapphire"] = "#00bfff"
+        
+        # Test resolving standard accent
+        assert tui.resolve_color("cyan") == "cyan"
+        assert tui.resolve_color("   cYan  ") == "cyan"
+        
+        # Test resolving a cosmere color (moves it to ACCENT_COLORS)
+        assert tui.resolve_color("sapphire") == "sapphire"
+        assert "sapphire" in tui.ACCENT_COLORS
+        assert tui.ACCENT_COLORS["sapphire"] == "#00bfff"
+        
+        # Test resolving custom hex
+        assert tui.resolve_color("#123456") == "#123456"
+        
+        # Test resolving empty
+        assert tui.resolve_color("") == ""
+        
+    finally:
+        tui.ACCENT_COLORS.clear()
+        tui.ACCENT_COLORS.update(orig_accent)
+        tui.COSMERE_COLORS.clear()
+        tui.COSMERE_COLORS.update(orig_cosmere)

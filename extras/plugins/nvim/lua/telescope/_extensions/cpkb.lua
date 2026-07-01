@@ -64,7 +64,7 @@ local cpkb_search = function(opts)
             table.insert(lines, s)
           end
           vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
-          vim.api.nvim_buf_set_option(self.state.bufnr, 'filetype', 'markdown')
+          vim.bo[self.state.bufnr].filetype = 'markdown'
         end
       end
     }),
@@ -72,6 +72,10 @@ local cpkb_search = function(opts)
       actions.select_default:replace(function()
         actions.close(prompt_bufnr)
         local selection = action_state.get_selected_entry()
+        if not selection then
+          print("No snippet selected")
+          return
+        end
         
         -- Insert snippet code at cursor
         local handle = io.popen(string.format("cpkb show %s", selection.value))

@@ -60,6 +60,55 @@ ACCENT_COLORS = {
     "red": "#ff5555",
 }
 
+def get_cosmere_colors() -> dict[str, str]:
+    colors = {}
+    path = Path(os.path.expanduser("~/.local/bin/cosmere_colors.sh"))
+    if not path.exists():
+        return colors
+    try:
+        content = path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("export "):
+                match = _re.match(r"export\s+([A-Z0-9_]+)=0x[a-fA-F0-9]{2}([a-fA-F0-9]{6})", line)
+                if match:
+                    name = match.group(1).lower()
+                    hex_val = f"#{match.group(2).lower()}"
+                    colors[name] = hex_val
+    except Exception:
+        pass
+    return colors
+
+COSMERE_COLORS = get_cosmere_colors()
+
+def resolve_color(color_name: str) -> str:
+    """Resolve a color name against ACCENT_COLORS or COSMERE_COLORS.
+    If it's a valid Cosmere color not yet in ACCENT_COLORS, add it.
+    Returns the resolved name (or hex if custom)."""
+    if not color_name:
+        return ""
+    cn = color_name.lower().strip()
+    if cn in ACCENT_COLORS:
+        return cn
+    if cn in COSMERE_COLORS:
+        ACCENT_COLORS[cn] = COSMERE_COLORS[cn]
+        return cn
+    return color_name
+
+class CosmereColorSuggester(Suggester):
+    def __init__(self) -> None:
+        super().__init__(use_cache=True, case_sensitive=False)
+
+    async def get_suggestion(self, value: str) -> str | None:
+        if not value:
+            return None
+        value_lower = value.lower()
+        for color_name in COSMERE_COLORS:
+            if color_name.startswith(value_lower):
+                return color_name
+        return None
+
+
 
 def _sanitize_css_id(raw: str) -> str:
     """Turn an arbitrary snippet ID into a valid CSS identifier fragment.
@@ -521,11 +570,18 @@ class SettingsModal(ModalScreen[dict]):
                 )
                 yield Button("Edit Custom Theme", id="edit-custom-theme-btn")
                 yield Label("Accent:")
+                is_custom_accent = self._current_accent not in ACCENT_COLORS
                 yield Select(
                     [(name.title(), name) for name in ACCENT_COLORS],
-                    value=self._current_accent,
+                    value=self._current_accent if not is_custom_accent else "cyan",
                     allow_blank=False,
                     id="accent-select",
+                )
+                yield Input(
+                    value=self._current_accent if is_custom_accent else "",
+                    placeholder="Custom hex or Cosmere name",
+                    id="accent-custom",
+                    suggester=CosmereColorSuggester(),
                 )
                 yield Label("Layout:")
                 yield Select(
@@ -555,8 +611,9 @@ class SettingsModal(ModalScreen[dict]):
                     )
                     yield Input(
                         value=current_color if is_custom_hex else "",
-                        placeholder="Custom hex (e.g. #ff6347)",
+                        placeholder="Custom hex or Cosmere name",
                         id=f"fmt-hex-{safe_name}",
+                        suggester=CosmereColorSuggester(),
                     )
             with Horizontal(classes="modal-actions"):
                 yield Button("Apply", variant="success", id="apply-btn")
@@ -581,13 +638,16 @@ class SettingsModal(ModalScreen[dict]):
                 safe_name = _sanitize_css_id(fmt_name)
                 custom_hex = self.query_one(f"#fmt-hex-{safe_name}", Input).value.strip()
                 if custom_hex:
-                    format_colors[fmt_name] = custom_hex
+                    format_colors[fmt_name] = resolve_color(custom_hex)
                 else:
                     format_colors[fmt_name] = str(self.query_one(f"#fmt-color-{safe_name}", Select).value)
             
+            custom_accent = self.query_one("#accent-custom", Input).value.strip()
+            accent_color = resolve_color(custom_accent) if custom_accent else str(self.query_one("#accent-select", Select).value)
+            
             self.dismiss({
                 "theme": str(self.query_one("#theme-select", Select).value),
-                "accent_color": str(self.query_one("#accent-select", Select).value),
+                "accent_color": accent_color,
                 "layout": str(self.query_one("#layout-select", Select).value),
                 "border_style": str(self.query_one("#border-select", Select).value),
                 "format_colors": format_colors,
@@ -720,7 +780,7 @@ class SnippetApp(App):
         config = load_config(APP_DIR)
         display = config.get("display", {})
         theme = str(display.get("theme", DEFAULT_CONFIG["display"]["theme"]))
-        accent = str(display.get("accent_color", DEFAULT_CONFIG["display"]["accent_color"]))
+        accent = resolve_color(str(display.get("accent_color", DEFAULT_CONFIG["display"]["accent_color"])))
         try:
             pane_width = int(display.get("left_pane_width", DEFAULT_CONFIG["display"]["left_pane_width"]))
         except (TypeError, ValueError):
@@ -748,6 +808,8 @@ class SnippetApp(App):
         for i, (fmt_name, fmt_cfg) in enumerate(self.id_formats.items()):
             if "color" not in fmt_cfg:
                 fmt_cfg["color"] = color_names[i % len(color_names)]
+            else:
+                fmt_cfg["color"] = resolve_color(fmt_cfg["color"])
 
         self.default_id_format = str(snippets_config.get("default_id_format", "default"))
         return theme, accent

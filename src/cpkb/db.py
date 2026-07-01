@@ -463,9 +463,11 @@ def search_snippets_full(cursor: sqlite3.Cursor, query: str) -> list[tuple]:
         )
         params.extend([like_str, like_str, like_str, like_str, like_str])
 
-    sql = ("SELECT id, title FROM snippets WHERE "
-           + " AND ".join(conditions)
-           + " ORDER BY created_at DESC")
+    sql = "SELECT id, title FROM snippets"
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY created_at DESC"
+    
     cursor.execute(sql, params)
     return cursor.fetchall()
 
