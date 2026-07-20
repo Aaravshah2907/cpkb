@@ -22,6 +22,7 @@ import urllib.request
 import threading
 import time
 import json
+from copy import deepcopy
 
 from .db import (
     init_db, backup_db, generate_id, update_tags,
@@ -235,7 +236,7 @@ def _print_setup_tool_notes() -> None:
 
 def cmd_setup(args: argparse.Namespace) -> None:
     """Initialize CPKB app directories and config from the installed CLI."""
-    config = DEFAULT_CONFIG if args.reset_config else load_config(APP_DIR)
+    config = deepcopy(DEFAULT_CONFIG) if args.reset_config else load_config(APP_DIR)
 
     if args.yes:
         default_language = config.get("default_language", DEFAULT_CONFIG["default_language"])
@@ -279,28 +280,15 @@ def cmd_setup(args: argparse.Namespace) -> None:
     for subdir in ("backups", "exports", "imports", "logs", "attachments"):
         (APP_DIR / subdir).mkdir(exist_ok=True)
 
-    updated_config = {
-        **DEFAULT_CONFIG,
-        "default_language": default_language,
-        "display": {
-            "theme": theme,
-            "accent_color": accent_color,
-        },
-        "snippets": {
-            **DEFAULT_CONFIG["snippets"],
-            "max_number": _as_int(max_snippets_value, 9999, 1),
-            "code_language": default_language,
-        },
-        "backups": {
-            "max_backups": _as_int(max_backups_value, 25, 0),
-        },
-        "imports": {
-            "load_cpp_cheatsheet_on_setup": bool(load_cpp),
-        },
-        "encryption": {
-            "enabled": bool(enable_encryption),
-        },
-    }
+    updated_config = deepcopy(config)
+    updated_config["default_language"] = default_language
+    updated_config.setdefault("display", {})["theme"] = theme
+    updated_config.setdefault("display", {})["accent_color"] = accent_color
+    updated_config.setdefault("snippets", {})["max_number"] = _as_int(max_snippets_value, 9999, 1)
+    updated_config.setdefault("snippets", {})["code_language"] = default_language
+    updated_config.setdefault("backups", {})["max_backups"] = _as_int(max_backups_value, 25, 0)
+    updated_config.setdefault("imports", {})["load_cpp_cheatsheet_on_setup"] = bool(load_cpp)
+    updated_config.setdefault("encryption", {})["enabled"] = bool(enable_encryption)
     config_path = save_config(APP_DIR, updated_config)
     conn = init_db()
     conn.close()
@@ -1185,7 +1173,7 @@ def _load_markdown_snippets(raw: bytes) -> list[dict]:
         r"\*\*Description:\*\* (?P<description>.*?)\n"
         r"\*\*Use case:\*\* (?P<use_case>.*?)\n"
         r"\*\*Tags:\*\* (?P<tags>.*?)\n\n"
-        r"```\n(?P<code>.*?)\n```\n?",
+        r"```[^\n]*\n(?P<code>.*?)\n```\n?",
         re.MULTILINE | re.DOTALL,
     )
     return [match.groupdict() for match in pattern.finditer(text)]

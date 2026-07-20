@@ -18,6 +18,16 @@ APP_DIR = XDG_DATA_HOME / "cpkb"
 DB_PATH = APP_DIR / "snippets.db"
 KEY_PATH = APP_DIR / "encryption.key"
 CURRENT_SCHEMA_VERSION = 2
+ALLOWED_SNIPPET_FIELDS = {
+    "id",
+    "title",
+    "description",
+    "use_case",
+    "tags",
+    "code",
+    "created_at",
+    "updated_at",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -385,10 +395,26 @@ def get_snippet(cursor: sqlite3.Cursor, snippet_id: str) -> tuple | None:
     return cursor.fetchone()
 
 
+def _validate_snippet_fields(fields: str | list[str] | tuple[str, ...]) -> str:
+    """Return a safe SELECT list for snippets columns."""
+    if isinstance(fields, str):
+        requested = [field.strip() for field in fields.split(",")]
+    else:
+        requested = [str(field).strip() for field in fields]
+
+    if not requested or any(not field for field in requested):
+        raise ValueError("At least one snippet field is required.")
+
+    invalid = [field for field in requested if field not in ALLOWED_SNIPPET_FIELDS]
+    if invalid:
+        raise ValueError(f"Invalid snippet field(s): {', '.join(invalid)}")
+    return ", ".join(requested)
+
+
 def get_snippet_fields(cursor: sqlite3.Cursor, snippet_id: str,
-                       fields: str = "title, description, use_case, tags, code") -> tuple | None:
+                       fields: str | list[str] | tuple[str, ...] = "title, description, use_case, tags, code") -> tuple | None:
     """Return selected fields for a snippet or ``None``."""
-    cursor.execute(f"SELECT {fields} FROM snippets WHERE id = ?", (snippet_id,))
+    cursor.execute(f"SELECT {_validate_snippet_fields(fields)} FROM snippets WHERE id = ?", (snippet_id,))
     return cursor.fetchone()
 
 
