@@ -2,8 +2,6 @@
 
 ## Quick Release (Recommended)
 
-Run the automated release script from the repository root:
-
 ```bash
 ./scripts/release.sh <new-version>
 ```
@@ -11,84 +9,98 @@ Run the automated release script from the repository root:
 Example:
 
 ```bash
-./scripts/release.sh 2.0.5
+./scripts/release.sh 3.0.1
 ```
 
 The script handles everything end-to-end:
 
-1. Bumps the version in `pyproject.toml`, `src/cpkb/__init__.py`, and `setup.sh`
-2. Runs the test suite
-3. Builds the sdist and wheel
+1. Bumps the version in `rust/Cargo.toml`, `pyproject.toml`, `src/cpkb/__init__.py`, and `setup.sh`
+2. Runs the Rust test suite (`cargo test`) and differential parity tests
+3. Builds the Rust release binary and Python distributions
 4. Commits, tags (`v<version>`), and pushes to origin
-5. Downloads the GitHub archive tarball and computes its SHA256
-6. Updates `Formula/cpkb.rb` in this repo and pushes
-7. Syncs the homebrew tap at `$(brew --repository)/Library/Taps/aaravshah2907/homebrew-cpkb` and pushes
+5. Waits 2 minutes for GitHub to process the tag
+6. Downloads the GitHub archive tarball and computes its SHA256
+7. Updates `Formula/cpkb.rb` and pushes
+8. Syncs the homebrew tap at `$(brew --repository)/Library/Taps/aaravshah2907/homebrew-cpkb` and pushes
 
-PyPI publishing is handled automatically by the `Publish` GitHub Actions workflow on tag push.
+GitHub Actions (`release-rust.yml`) then automatically builds pre-compiled binaries for macOS (arm64 + x86_64) and Linux (x86_64) and attaches them to the GitHub Release.
 
 ---
 
 ## Manual Release
 
-### PyPI
+### 1. Bump versions
 
-1. Create the project on PyPI as `cpkb`.
-2. Configure trusted publishing for this repository and the `pypi` GitHub Actions environment.
-3. Update the version in `pyproject.toml`, `src/cpkb/__init__.py`, `setup.sh`, and `Formula/cpkb.rb`.
-4. Build and check locally:
+Edit these four files to the new version:
+- `rust/Cargo.toml` — `version = "X.Y.Z"` (primary source of truth)
+- `pyproject.toml` — `version = "X.Y.Z"`
+- `src/cpkb/__init__.py` — `__version__ = "X.Y.Z"`
+- `setup.sh` — `"app_version": "X.Y.Z"`
 
-   ```bash
-   python3 -m pip install -e ".[dev]"
-   pytest
-   python3 -m build
-   python3 -m twine check dist/*
-   ```
+### 2. Test
 
-5. Commit, tag, and push:
+```bash
+cd rust && cargo test
+python3 tests/test_differential_parity.py
+```
 
-   ```bash
-   git tag v<version>
-   git push origin main --tags
-   ```
+### 3. Build
 
-The `Publish` workflow builds the source distribution and wheel, then publishes to PyPI.
+```bash
+# Rust release binary
+cd rust && cargo build --release
 
-### Homebrew
+# Python wheel (for PyPI legacy distribution)
+python3 -m build
+```
 
-The formula in `Formula/cpkb.rb` points at the GitHub release source distribution and uses a real SHA256 checksum. Homebrew 6 requires formula developer commands to run against a tap, not an arbitrary path.
+### 4. Commit, tag, push
 
-1. Create or update the tap:
+```bash
+git add rust/Cargo.toml rust/Cargo.lock pyproject.toml src/cpkb/__init__.py setup.sh Formula/
+git commit -m "Release vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags
+```
 
-   ```bash
-   brew tap-new Aaravshah2907/cpkb
-   cp Formula/cpkb.rb "$(brew --repository)/Library/Taps/aaravshah2907/homebrew-cpkb/Formula/cpkb.rb"
-   ```
+### 5. Update Homebrew formula
 
-2. Trust the formula while testing locally:
+After GitHub processes the tag:
 
-   ```bash
-   brew trust --formula Aaravshah2907/cpkb/cpkb
-   ```
+```bash
+TARBALL_URL="https://github.com/Aaravshah2907/cpkb/archive/refs/tags/vX.Y.Z.tar.gz"
+SHA256=$(curl -fsSL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
 
-3. Build the source distribution, upload it to the GitHub release as `cpkb-<version>.tar.gz`, and verify the formula's main `sha256` with that exact artifact:
+# Update Formula/cpkb.rb url and sha256 fields, then:
+git add Formula/cpkb.rb
+git commit -m "Update homebrew formula for vX.Y.Z"
+git push origin main
+```
 
-   ```bash
-   python3 -m build --sdist --no-isolation
-   shasum -a 256 dist/cpkb-<version>.tar.gz
-   ```
+Sync the tap:
 
-4. Verify the Homebrew package:
+```bash
+TAP_DIR="$(brew --repository)/Library/Taps/aaravshah2907/homebrew-cpkb"
+cp Formula/cpkb.rb "$TAP_DIR/Formula/cpkb.rb"
+cd "$TAP_DIR" && git add Formula/ && git commit -m "Update cpkb to vX.Y.Z" && git push origin main
+```
 
-   ```bash
-   brew audit --strict --online Aaravshah2907/cpkb/cpkb
-   brew install --build-from-source Aaravshah2907/cpkb/cpkb
-   brew test Aaravshah2907/cpkb/cpkb
-   ```
+### 6. Verify Homebrew
 
-5. If Homebrew edits the tap formula, copy it back:
+```bash
+brew update
+brew upgrade Aaravshah2907/cpkb/cpkb
+cpkb --version
+brew test Aaravshah2907/cpkb/cpkb
+```
 
-   ```bash
-   cp "$(brew --repository)/Library/Taps/aaravshah2907/homebrew-cpkb/Formula/cpkb.rb" Formula/cpkb.rb
-   ```
+---
 
-6. Commit the completed formula to the `homebrew-cpkb` tap repository, or submit it to Homebrew core once the project meets Homebrew's acceptance criteria.
+## GitHub Actions Workflows
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `rust-ci.yml` | push/PR to main | Cargo test + build + parity tests |
+| `ci.yml` | push/PR to any branch | Python legacy test suite |
+| `release-rust.yml` | push tag `v3.*` | Builds macOS arm64, macOS x86_64, Linux x86_64 binaries, uploads to GitHub Release |
+| `publish.yml` | push tag `v*.*.*` | Builds Python wheel and publishes to PyPI (legacy) |

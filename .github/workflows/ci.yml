@@ -7,31 +7,67 @@ on:
     branches: ["**"]
 
 jobs:
-  test:
+  # ── Primary: Rust test suite ─────────────────────────────────────────────────
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run Rust tests
+        run: cd rust && cargo test --verbose
+
+      - name: Build release binary
+        run: cd rust && cargo build --release
+
+      - name: Run differential parity suite
+        run: python3 tests/test_differential_parity.py
+
+  # ── Secondary: Python legacy test suite ─────────────────────────────────────
+  python-legacy:
+    name: Python legacy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-13, windows-2022]
+        os: [ubuntu-22.04, macos-13]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
-      - name: Run tests
+      - name: Run Python tests
         run: pytest -q
 
-      - name: Build package
+      - name: Build Python wheel (Ubuntu only)
         if: matrix.os == 'ubuntu-22.04'
         run: |
           rm -rf dist
