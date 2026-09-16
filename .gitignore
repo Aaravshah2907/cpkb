@@ -53,3 +53,9 @@ todolist.md
 *plan*.md
 *PLAN*.md
 RUST_MIGRATION_PLAN.md
+
+# Rust build artifacts
+target/
+rust/target/
+**/*.rs.bk
+Cargo.lock
