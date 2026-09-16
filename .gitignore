@@ -54,8 +54,19 @@ todolist.md
 *PLAN*.md
 RUST_MIGRATION_PLAN.md
 
-# Rust build artifacts
+# Rust build artifacts & compiled binaries
 target/
 rust/target/
 **/*.rs.bk
 Cargo.lock
+*.dylib
+*.so
+*.dll
+*.exe
+*.bin
+*.o
+*.a
+bin/
+rust/bin/
+cpkb
+cpkb-rs
