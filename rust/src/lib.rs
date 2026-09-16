@@ -6,4 +6,5 @@ pub mod cli;
 pub mod clipboard;
 pub mod export;
 pub mod tui;
+pub mod defaults;
 

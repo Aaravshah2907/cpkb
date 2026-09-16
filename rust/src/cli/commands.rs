@@ -536,27 +536,35 @@ pub fn cmd_export_db(app_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Import snippets from a file (Markdown, JSON, HTML, or raw SQLite DB).
+/// Import snippets from a file (Markdown, JSON, HTML, or raw SQLite DB) or bundled defaults.
 pub fn cmd_import(
     conn: &mut Connection,
-    source: &str,
+    source: Option<&str>,
+    defaults: bool,
     preserve_ids: bool,
     id_format: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::export::import::{import_snippets, load_from_path};
+    use crate::export::import::import_snippets;
 
-    let path = std::path::Path::new(source);
-    if !path.exists() {
-        eprintln!("Error: File not found: {source}");
-        return Ok(());
-    }
-
-    let records = match load_from_path(path) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Failed to load import file: {e}");
+    let records = if defaults {
+        crate::defaults::default_snippets()
+    } else if let Some(src) = source {
+        let path = std::path::Path::new(src);
+        if !path.exists() {
+            eprintln!("Error: File not found: {src}");
             return Ok(());
         }
+
+        match crate::export::import::load_from_path(path) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Failed to load import file: {e}");
+                return Ok(());
+            }
+        }
+    } else {
+        eprintln!("Import failed: provide a source file path or use --defaults.");
+        return Ok(());
     };
 
     match import_snippets(conn, records, preserve_ids, id_format) {

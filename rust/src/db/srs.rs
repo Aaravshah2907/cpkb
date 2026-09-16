@@ -171,8 +171,8 @@ pub fn get_srs_stats(conn: &Connection) -> Result<SrsStats> {
         |r| r.get(0),
     )?;
     let avg_ef: Option<f64> = conn
-        .query_row("SELECT AVG(ease_factor) FROM reviews", [], |r| r.get(0))
-        .optional()?;
+        .query_row("SELECT AVG(ease_factor) FROM reviews", [], |r| r.get::<_, Option<f64>>(0))
+        .unwrap_or(None);
 
     Ok(SrsStats {
         total,

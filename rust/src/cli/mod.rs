@@ -1,10 +1,12 @@
 //! Clap command line argument parser and dispatcher for CPKB.
 
 pub mod commands;
+pub mod completions;
 pub mod editor;
 
 use std::path::Path;
 use clap::{Args, Parser, Subcommand};
+use clap_complete::Shell;
 use rusqlite::Connection;
 
 #[derive(Parser, Debug)]
@@ -160,10 +162,14 @@ pub enum Commands {
     /// Export the raw SQLite database file to the exports directory
     ExportDb,
 
-    /// Import snippets from a Markdown, JSON, HTML, or SQLite DB file
+    /// Import snippets from a Markdown, JSON, HTML, or SQLite DB file (or bundled defaults)
     Import {
         /// Path to the import source file
-        source: String,
+        source: Option<String>,
+
+        /// Import bundled standard C++ STL and algorithm cheatsheets
+        #[arg(long)]
+        defaults: bool,
 
         /// Regenerate IDs instead of preserving source IDs
         #[arg(long)]
@@ -172,6 +178,12 @@ pub enum Commands {
         /// Override the ID format for newly generated IDs (e.g. default, ms, latex)
         #[arg(long)]
         id_format: Option<String>,
+    },
+
+    /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
+    Completions {
+        /// Target shell type
+        shell: Shell,
     },
 }
 
@@ -249,8 +261,12 @@ pub fn run_cli(cli: Cli, conn: &mut Connection, app_dir: &Path) -> Result<(), Bo
         Commands::ExportJson => commands::cmd_export_json(conn, app_dir),
         Commands::ExportHtml => commands::cmd_export_html(conn, app_dir),
         Commands::ExportDb => commands::cmd_export_db(app_dir),
-        Commands::Import { source, regenerate_ids, id_format } => {
-            commands::cmd_import(conn, &source, !regenerate_ids, id_format.as_deref())
+        Commands::Import { source, defaults, regenerate_ids, id_format } => {
+            commands::cmd_import(conn, source.as_deref(), defaults, !regenerate_ids, id_format.as_deref())
+        }
+        Commands::Completions { shell } => {
+            completions::generate_completions(shell);
+            Ok(())
         }
     }
 }

@@ -1,26 +1,23 @@
 class Cpkb < Formula
-  desc "Terminal-first Competitive Programming Knowledge Base"
+  desc "Competitive Programming Knowledge Base (High-Performance Rust Edition)"
   homepage "https://github.com/Aaravshah2907/cpkb"
-  url "https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v2.2.14.tar.gz"
-  sha256 "3a83ba0e9c95b6132516327d68ee9b228467734bbf84a3a6b339e618800f3d5b"
+  url "https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v3.0.0.tar.gz"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
 
-  depends_on "python@3.11"
-  depends_on "fzf" => :recommended
+  depends_on "rust" => :build
 
   def install
-    libexec.install "src"
+    cd "rust" do
+      system "cargo", "install", *std_cargo_args
+    end
 
-    (bin/"cpkb").write <<~EOS
-      #!/bin/sh
-      export PYTHONPATH="#{libexec}/src${PYTHONPATH:+:$PYTHONPATH}"
-      exec python3 -m cpkb.cli "$@"
-    EOS
+    # Install shell completions
+    generate_completions_from_executable(bin/"cpkb", "completions")
   end
 
   test do
-    assert_match version.to_s, shell_output("#{bin}/cpkb --version")
+    assert_match "3.0.0", shell_output("#{bin}/cpkb --version")
     assert_match "Competitive Programming Knowledge Base", shell_output("#{bin}/cpkb --help")
-    assert_match "setup", shell_output("#{bin}/cpkb --help")
   end
 end
