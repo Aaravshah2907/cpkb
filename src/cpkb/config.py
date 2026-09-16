@@ -51,6 +51,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "prefix": "ms_",
                 "width": "auto",
             },
+            "latex": {
+                "pattern": "LATEX-######",
+            },
         },
     },
     "keybindings": {

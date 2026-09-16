@@ -1021,7 +1021,10 @@ def cmd_export(args: argparse.Namespace) -> None:
     from datetime import datetime, timezone
     conn = init_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM snippets ORDER BY created_at")
+    cursor.execute(
+        "SELECT id, title, description, use_case, tags, code, language, created_at, updated_at "
+        "FROM snippets ORDER BY created_at"
+    )
     rows = cursor.fetchall()
     if not rows:
         print("No snippets to export.")
@@ -1031,7 +1034,7 @@ def cmd_export(args: argparse.Namespace) -> None:
     out_path = export_dir / f'snippets_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.md'
     with open(out_path, 'w') as f:
         for row in rows:
-            lang = row[6] if len(row) > 6 and row[6] else "cpp"
+            lang = row[6] or "cpp"
             f.write(f"## {row[1]} ({row[0]})\n")
             f.write(f"**Description:** {row[2] or ''}\n")
             f.write(f"**Use case:** {row[3] or ''}\n")
@@ -1047,15 +1050,18 @@ def cmd_export_json(args: argparse.Namespace) -> None:
     from datetime import datetime, timezone
     conn = init_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM snippets ORDER BY created_at")
+    cursor.execute(
+        "SELECT id, title, description, use_case, tags, code, language, created_at, updated_at "
+        "FROM snippets ORDER BY created_at"
+    )
     rows = cursor.fetchall()
     data = [
         {
             "id": r[0], "title": r[1], "description": r[2], "use_case": r[3],
             "tags": r[4], "code": r[5],
-            "language": r[6] if len(r) > 6 and r[6] else "cpp",
-            "created_at": r[7] if len(r) > 7 else (r[6] if len(r) > 6 else ""),
-            "updated_at": r[8] if len(r) > 8 else (r[7] if len(r) > 7 else ""),
+            "language": r[6] or "cpp",
+            "created_at": r[7] or "",
+            "updated_at": r[8] or "",
         } for r in rows
     ]
     export_dir = APP_DIR / "exports"
@@ -1071,7 +1077,10 @@ def cmd_export_html(args: argparse.Namespace) -> None:
     from datetime import datetime, timezone
     conn = init_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM snippets ORDER BY created_at")
+    cursor.execute(
+        "SELECT id, title, description, use_case, tags, code, language, created_at, updated_at "
+        "FROM snippets ORDER BY created_at"
+    )
     rows = cursor.fetchall()
     export_dir = APP_DIR / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -1079,7 +1088,7 @@ def cmd_export_html(args: argparse.Namespace) -> None:
     with open(out_path, 'w') as f:
         f.write("<html><head><meta charset='utf-8'><title>CPKB Export</title></head><body>")
         for row in rows:
-            lang = row[6] if len(row) > 6 and row[6] else "cpp"
+            lang = row[6] or "cpp"
             f.write(f"<section><h2>{row[1]} ({row[0]})</h2>")
             f.write(f"<p><strong>Description:</strong> {row[2] or ''}</p>")
             f.write(f"<p><strong>Use case:</strong> {row[3] or ''}</p>")

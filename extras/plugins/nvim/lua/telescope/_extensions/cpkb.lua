@@ -21,6 +21,7 @@ local function normalize_lang(lang)
   if lang == "sh" or lang == "zsh" or lang == "bash" then return "sh" end
   if lang == "markdown" or lang == "md" then return "markdown" end
   if lang == "txt" or lang == "plaintext" then return "text" end
+  if lang == "latex" or lang == "plaintex" or lang == "tex" then return "tex" end
   return lang
 end
 

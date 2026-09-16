@@ -183,6 +183,11 @@ def migrate_db(cursor: sqlite3.Cursor, conn: sqlite3.Connection, db_existed: boo
             cursor.execute("ALTER TABLE snippets ADD COLUMN language TEXT NOT NULL DEFAULT 'cpp'")
         else:
             cursor.execute("UPDATE snippets SET language = 'cpp' WHERE language IS NULL OR language = ''")
+        cursor.execute(
+            "UPDATE snippets SET language = 'tex' "
+            "WHERE (id LIKE 'LATEX-%' OR id LIKE 'latex%' OR id LIKE 'LATEX%') "
+            "AND (language = 'cpp' OR language IS NULL OR language = '')"
+        )
 
     set_schema_version(cursor, CURRENT_SCHEMA_VERSION)
     conn.commit()
@@ -326,18 +331,24 @@ def add_snippet(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
     if id_format is None and language in formats and language not in {
         "cpp", "c", "python", "py", "rust", "rs", "javascript", "js",
         "typescript", "ts", "go", "golang", "java", "lua", "bash", "sh",
-        "markdown", "md", "text", "txt", "sql"
+        "markdown", "md", "text", "txt", "sql", "tex", "latex", "plaintex"
     }:
         id_format = language
         language = None
 
     if not language:
-        language = str(
-            config.get("snippets", {}).get("code_language")
-            or config.get("default_language", "cpp")
-        )
+        if id_format and ("latex" in str(id_format).lower() or "tex" in str(id_format).lower()):
+            language = "tex"
+        else:
+            language = str(
+                config.get("snippets", {}).get("code_language")
+                or config.get("default_language", "cpp")
+            )
 
     snippet_id = generate_id(cursor, id_format)
+    if (snippet_id.startswith("LATEX") or snippet_id.lower().startswith("latex")) and language == "cpp":
+        language = "tex"
+
     now = _now()
     cursor.execute('''
         INSERT INTO snippets (id, title, description, use_case, tags, code, language, created_at, updated_at)
@@ -355,6 +366,8 @@ def insert_snippet_with_id(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
                            created_at: str | None = None,
                            updated_at: str | None = None) -> str:
     """Insert a snippet with a caller-provided ID and return the inserted ID."""
+    if (snippet_id.startswith("LATEX") or snippet_id.lower().startswith("latex")) and (language == "cpp" or not language):
+        language = "tex"
     now = _now()
     cursor.execute('''
         INSERT INTO snippets (id, title, description, use_case, tags, code, language, created_at, updated_at)
@@ -421,7 +434,11 @@ def import_snippets(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
 
 def get_snippet(cursor: sqlite3.Cursor, snippet_id: str) -> tuple | None:
     """Return the full snippet row or ``None``."""
-    cursor.execute("SELECT * FROM snippets WHERE id = ?", (snippet_id,))
+    cursor.execute(
+        "SELECT id, title, description, use_case, tags, code, language, created_at, updated_at "
+        "FROM snippets WHERE id = ?",
+        (snippet_id,),
+    )
     return cursor.fetchone()
 
 
