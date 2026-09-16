@@ -1488,22 +1488,34 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # V1 Commands
-    parser_add = subparsers.add_parser("add", help="Add a new snippet")
+    parser_add = subparsers.add_parser(
+        "add",
+        help="Add a new snippet with interactive prompts or options",
+        description="Add a new code or text snippet to the knowledge base.",
+    )
     parser_add.add_argument(
         "--id-format",
-        help="Configured ID format name from config.json snippets.id_formats",
+        help="Configured ID format pattern name (e.g. default, ms, Algo, latex)",
     )
     parser_add.add_argument(
         "-l", "--language",
-        help="Programming language for the snippet (e.g., cpp, python, rust, md)",
+        help="Programming language for the snippet (e.g. cpp, python, rust, tex, md, text, sql)",
     )
     parser_add.set_defaults(func=cmd_add)
 
-    parser_list = subparsers.add_parser("list", help="List all snippets")
+    parser_list = subparsers.add_parser(
+        "list",
+        help="List all snippets in the knowledge base",
+        description="Display a tabular list of all snippets with IDs, titles, and tags.",
+    )
     parser_list.set_defaults(func=cmd_list)
 
-    parser_show = subparsers.add_parser("show", help="Show a specific snippet")
-    parser_show.add_argument("id", help="Snippet ID (e.g., CP0001)")
+    parser_show = subparsers.add_parser(
+        "show",
+        help="Show snippet details, metadata, and code",
+        description="Display full snippet details including description, use cases, tags, language, timestamps, and code.",
+    )
+    parser_show.add_argument("id", help="Snippet ID (e.g., CP0001, ms_00001, LATEX-000014)")
     parser_show.add_argument(
         "--json",
         action="store_true",
@@ -1511,140 +1523,275 @@ def main() -> None:
     )
     parser_show.set_defaults(func=cmd_show)
 
-    parser_search = subparsers.add_parser("search", help="Search snippets")
-    parser_search.add_argument("query", help="Search query (multiple words will be AND'ed)")
+    parser_search = subparsers.add_parser(
+        "search",
+        help="Search snippets by keywords across title, description, tags, and code",
+        description="Perform full-text search across titles, descriptions, use cases, tags, and code contents.",
+    )
+    parser_search.add_argument("query", help="Search query (multiple keywords are combined with AND logic)")
     parser_search.set_defaults(func=cmd_search)
 
-    parser_query = subparsers.add_parser("query", help="Search snippets (scripting friendly)")
-    parser_query.add_argument("query", help="Search query")
-    parser_query.add_argument("--limit", type=int, default=5, help="Number of results to return")
+    parser_query = subparsers.add_parser(
+        "query",
+        help="Search snippets and output pipeline-friendly delimited rows (id | title)",
+        description="Search snippets and output simple piped lines formatted for shell scripts, fzf, and editor plugins.",
+    )
+    parser_query.add_argument("query", help="Search query string")
+    parser_query.add_argument("--limit", type=int, default=5, help="Maximum number of results to return (default: 5)")
     parser_query.set_defaults(func=cmd_query)
 
-    parser_use = subparsers.add_parser("use", help="Record usage of a snippet")
+    parser_use = subparsers.add_parser(
+        "use",
+        help="Record the usage of a snippet in an external source file or problem",
+        description="Record a usage instance tracking which problem or file used this snippet.",
+    )
     parser_use.add_argument("id", help="Snippet ID")
-    parser_use.add_argument("file", help="File where the snippet is used")
+    parser_use.add_argument("file", help="File path or problem identifier where the snippet was used")
     parser_use.set_defaults(func=cmd_use)
 
-    parser_usages = subparsers.add_parser("usages", help="List usages of a snippet")
+    parser_usages = subparsers.add_parser(
+        "usages",
+        help="List all recorded usage records and problem references for a snippet",
+        description="Display all recorded usage history for a given snippet ID.",
+    )
     parser_usages.add_argument("id", help="Snippet ID")
     parser_usages.set_defaults(func=cmd_usages)
 
-    parser_stats = subparsers.add_parser("stats", help="Show knowledge base statistics")
+    parser_stats = subparsers.add_parser(
+        "stats",
+        help="Show knowledge base summary statistics (snippets, usages, tags, languages)",
+        description="Display summary metrics on snippets, tags, recorded usages, and languages.",
+    )
     parser_stats.set_defaults(func=cmd_stats)
 
-    parser_random = subparsers.add_parser("random", help="Show a random snippet")
+    parser_random = subparsers.add_parser(
+        "random",
+        help="Fetch and display a randomly selected snippet",
+        description="Pick a random snippet from the knowledge base and print its details.",
+    )
     parser_random.set_defaults(func=cmd_random)
 
     # V1.1 & V1.2 Commands
-    parser_edit = subparsers.add_parser("edit", help="Edit a snippet in your default $EDITOR")
-    parser_edit.add_argument("id", help="Snippet ID")
+    parser_edit = subparsers.add_parser(
+        "edit",
+        help="Edit snippet metadata, language, and code in default $EDITOR",
+        description="Open a temporary markdown buffer in your configured $EDITOR to update snippet fields.",
+    )
+    parser_edit.add_argument("id", help="Snippet ID to edit")
     parser_edit.set_defaults(func=cmd_edit)
 
-    parser_edit_usage = subparsers.add_parser("edit-usage", help="Edit a specific usage record")
-    parser_edit_usage.add_argument("id", type=int, help="Usage ID (integer)")
+    parser_edit_usage = subparsers.add_parser(
+        "edit-usage",
+        help="Edit a specific usage record in default $EDITOR",
+        description="Open a temporary buffer in your $EDITOR to modify an existing usage record.",
+    )
+    parser_edit_usage.add_argument("id", type=int, help="Usage record integer ID")
     parser_edit_usage.set_defaults(func=cmd_edit_usage)
 
-    parser_delete = subparsers.add_parser("delete", help="Delete a snippet")
-    parser_delete.add_argument("id", help="Snippet ID")
+    parser_delete = subparsers.add_parser(
+        "delete",
+        help="Delete a snippet and its associated tags/usages",
+        description="Permanently remove a snippet and all its associated usage and review history.",
+    )
+    parser_delete.add_argument("id", help="Snippet ID to delete")
     parser_delete.set_defaults(func=cmd_delete)
 
-    parser_tag_add = subparsers.add_parser("tag-add", help="Add a tag to a snippet")
+    parser_tag_add = subparsers.add_parser(
+        "tag-add",
+        help="Add a tag to a snippet",
+        description="Attach an additional tag keyword to a snippet.",
+    )
     parser_tag_add.add_argument("id", help="Snippet ID")
-    parser_tag_add.add_argument("tag", help="Tag to add")
+    parser_tag_add.add_argument("tag", help="Tag keyword to add")
     parser_tag_add.set_defaults(func=cmd_tag_add)
 
-    parser_tag_remove = subparsers.add_parser("tag-remove", help="Remove a tag from a snippet")
+    parser_tag_remove = subparsers.add_parser(
+        "tag-remove",
+        help="Remove a tag from a snippet",
+        description="Remove an existing tag from a snippet.",
+    )
     parser_tag_remove.add_argument("id", help="Snippet ID")
-    parser_tag_remove.add_argument("tag", help="Tag to remove")
+    parser_tag_remove.add_argument("tag", help="Tag keyword to remove")
     parser_tag_remove.set_defaults(func=cmd_tag_remove)
 
-    parser_recent = subparsers.add_parser("recent", help="Show recent snippets")
-    parser_recent.add_argument("-n", "--limit", type=int, default=10, help="Number of snippets to show")
+    parser_recent = subparsers.add_parser(
+        "recent",
+        help="Show the most recently created or updated snippets",
+        description="Display recently created or updated snippets sorted by date.",
+    )
+    parser_recent.add_argument("-n", "--limit", type=int, default=10, help="Number of snippets to display (default: 10)")
     parser_recent.set_defaults(func=cmd_recent)
 
-    parser_export = subparsers.add_parser("export", help="Export all snippets to a markdown file")
+    parser_export = subparsers.add_parser(
+        "export",
+        help="Export all snippets to a Markdown (.md) bundle",
+        description="Generate a combined Markdown document containing all snippets with language-specific code blocks.",
+    )
     parser_export.set_defaults(func=cmd_export)
-    parser_export_json = subparsers.add_parser("export-json", help="Export snippets to JSON")
+
+    parser_export_json = subparsers.add_parser(
+        "export-json",
+        help="Export all snippets and metadata to a structured JSON file",
+        description="Export snippets to JSON format with complete metadata, timestamps, and language properties.",
+    )
     parser_export_json.set_defaults(func=cmd_export_json)
-    parser_export_html = subparsers.add_parser("export-html", help="Export snippets to HTML")
+
+    parser_export_html = subparsers.add_parser(
+        "export-html",
+        help="Export all snippets to a self-contained HTML document",
+        description="Export snippets to a styled, readable HTML report.",
+    )
     parser_export_html.set_defaults(func=cmd_export_html)
-    parser_export_db = subparsers.add_parser("export-db", help="Export the SQLite database")
+
+    parser_export_db = subparsers.add_parser(
+        "export-db",
+        help="Export the SQLite database file (optionally encrypted)",
+        description="Copy the active SQLite database to the exports folder, with optional password encryption.",
+    )
     parser_export_db.add_argument("--encrypted", action="store_true", help="Encrypt exported DB with a password")
     parser_export_db.set_defaults(func=cmd_export_db)
 
-    parser_import = subparsers.add_parser("import", help="Import snippets from a CPKB export")
-    parser_import.add_argument("source", nargs="?", help="Path or URL to a CPKB db/json/md/html export")
-    parser_import.add_argument("--format", choices=["db", "json", "md", "html"], help="Import format")
-    parser_import.add_argument("--encrypted", action="store_true", help="Decrypt source before importing")
-    parser_import.add_argument("--defaults", action="store_true", help="Import bundled C++ STL cheatsheets")
-    parser_import.add_argument("--list-defaults", action="store_true", help="Preview bundled cheatsheets")
-    parser_import.add_argument("--regenerate-ids", action="store_true", help="Generate new IDs instead of preserving source IDs")
-    parser_import.add_argument("--id-format", help="Configured ID format name to use with --regenerate-ids or collisions")
+    parser_import = subparsers.add_parser(
+        "import",
+        help="Import snippets from a CPKB export file or bundled cheatsheets",
+        description="Import snippet collections from JSON, Markdown, HTML, SQLite files, or bundled defaults.",
+    )
+    parser_import.add_argument("source", nargs="?", help="Path or URL to a CPKB export file (.json, .md, .html, .db)")
+    parser_import.add_argument("--format", choices=["db", "json", "md", "html"], help="Explicit source file format")
+    parser_import.add_argument("--encrypted", action="store_true", help="Decrypt source database before importing")
+    parser_import.add_argument("--defaults", action="store_true", help="Import bundled standard cheatsheets (e.g. C++ STL, Markdown notes)")
+    parser_import.add_argument("--list-defaults", action="store_true", help="Preview bundled default cheatsheets without importing")
+    parser_import.add_argument("--regenerate-ids", action="store_true", help="Generate new sequential IDs instead of preserving source IDs")
+    parser_import.add_argument("--id-format", help="Configured ID format name to use when regenerating IDs or resolving collisions")
     parser_import.set_defaults(func=cmd_import)
 
-    parser_backup = subparsers.add_parser("backup", help="Create a manual backup of the database")
+    parser_backup = subparsers.add_parser(
+        "backup",
+        help="Create a manual timestamped backup of the database",
+        description="Save a snapshot copy of the database into the backups directory.",
+    )
     parser_backup.set_defaults(func=cmd_backup)
 
-    parser_config = subparsers.add_parser("config", help="Show active configuration")
+    parser_config = subparsers.add_parser(
+        "config",
+        help="Display active configuration settings and storage paths",
+        description="Print active configuration properties, theme settings, and file paths.",
+    )
     parser_config.set_defaults(func=cmd_config)
 
-    parser_id_format = subparsers.add_parser("id-format", help="Manage configured snippet ID formats")
+    parser_id_format = subparsers.add_parser(
+        "id-format",
+        help="Manage custom sequential snippet ID formats and patterns",
+        description="View and configure custom sequential ID patterns (e.g. ALG.######, LATEX-######, ms_#####).",
+    )
     id_format_subparsers = parser_id_format.add_subparsers(dest="id_format_command", required=True)
 
-    parser_id_format_list = id_format_subparsers.add_parser("list", help="List configured ID formats")
+    parser_id_format_list = id_format_subparsers.add_parser(
+        "list",
+        help="List configured ID formats and patterns",
+        description="List all active snippet ID generation patterns and identify the default format.",
+    )
     parser_id_format_list.set_defaults(func=cmd_id_format_list)
 
-    parser_id_format_add = id_format_subparsers.add_parser("add", help="Add or update an ID format")
-    parser_id_format_add.add_argument("name", help="Format name, e.g. note or algorithm")
+    parser_id_format_add = id_format_subparsers.add_parser(
+        "add",
+        help="Add or update a custom ID format pattern",
+        description="Define a new sequential ID pattern using '#' digit placeholders (e.g. NOTE-###, ALG_####).",
+    )
+    parser_id_format_add.add_argument("name", help="Format name identifier (e.g. Algo, latex, ms, custom)")
     parser_id_format_add.add_argument(
         "--pattern",
-        help="ID pattern with # placeholders, e.g. NOTE-###, ALG_####, or ID@#######",
+        help="ID pattern with # placeholders (e.g. NOTE-###, ALG_####, LATEX-######, ID@#######)",
     )
-    parser_id_format_add.add_argument("--prefix", help="Legacy ID prefix, e.g. NOTE-")
-    parser_id_format_add.add_argument("--width", type=_id_width, default="auto", help="'auto' or a positive integer")
-    parser_id_format_add.add_argument("--default", action="store_true", help="Also make this the default ID format")
+    parser_id_format_add.add_argument("--prefix", help="Legacy ID prefix string (e.g. NOTE-)")
+    parser_id_format_add.add_argument("--width", type=_id_width, default="auto", help="'auto' or a positive integer width")
+    parser_id_format_add.add_argument("--default", action="store_true", help="Set this format as the default for new snippets")
     parser_id_format_add.set_defaults(func=cmd_id_format_add)
 
-    parser_id_format_default = id_format_subparsers.add_parser("default", help="Set the default ID format")
-    parser_id_format_default.add_argument("name", help="Configured format name")
+    parser_id_format_default = id_format_subparsers.add_parser(
+        "default",
+        help="Set the default ID format for new snippets",
+        description="Set which configured ID format pattern is used by default when adding snippets.",
+    )
+    parser_id_format_default.add_argument("name", help="Configured format name to set as default")
     parser_id_format_default.set_defaults(func=cmd_id_format_default)
 
-    parser_setup = subparsers.add_parser("setup", help="Set up CPKB directories, config, and optional defaults")
-    parser_setup.add_argument("-y", "--yes", action="store_true", help="Accept current/default config values without prompts")
-    parser_setup.add_argument("--reset-config", action="store_true", help="Use factory config defaults during setup without deleting snippets")
-    parser_setup.add_argument("--load-defaults", action="store_true", help="Import bundled C++ STL cheatsheets")
-    parser_setup.add_argument("--enable-encryption", action="store_true", help="Enable encryption commands in config")
+    parser_setup = subparsers.add_parser(
+        "setup",
+        help="Interactive or automated setup of directories, config, and defaults",
+        description="Initialize application directories, configure preferences, and optionally install shell completions.",
+    )
+    parser_setup.add_argument("-y", "--yes", action="store_true", help="Accept default configuration values without interactive prompts")
+    parser_setup.add_argument("--reset-config", action="store_true", help="Reset configuration to factory defaults while preserving snippet data")
+    parser_setup.add_argument("--load-defaults", action="store_true", help="Import bundled default cheatsheets during setup")
+    parser_setup.add_argument("--enable-encryption", action="store_true", help="Enable database encryption utilities in configuration")
     parser_setup.add_argument("--install-completions", action="store_true", help="Install shell auto-completions during setup")
     parser_setup.set_defaults(func=cmd_setup)
 
-    parser_encrypt = subparsers.add_parser("encrypt-db", help="Encrypt the database with a password")
+    parser_encrypt = subparsers.add_parser(
+        "encrypt-db",
+        help="Encrypt the database with PBKDF2-HMAC-SHA256 and Fernet",
+        description="Encrypt the active SQLite database in-place using a user password.",
+    )
     parser_encrypt.set_defaults(func=cmd_encrypt_db)
 
-    parser_decrypt = subparsers.add_parser("decrypt-db", help="Decrypt the database with a password")
+    parser_decrypt = subparsers.add_parser(
+        "decrypt-db",
+        help="Decrypt an encrypted database back to standard SQLite",
+        description="Decrypt the active database back to standard SQLite using the user password.",
+    )
     parser_decrypt.set_defaults(func=cmd_decrypt_db)
 
-    parser_sync = subparsers.add_parser("sync", help="Sync database to Git remote (or rsync)")
+    parser_sync = subparsers.add_parser(
+        "sync",
+        help="Sync database to a Git remote repository (or rsync)",
+        description="Automate database commits and pushes to a configured remote Git repository.",
+    )
     parser_sync.set_defaults(func=cmd_sync)
 
-    parser_install_completions = subparsers.add_parser("install-completions", help="Install shell auto-completions")
+    parser_install_completions = subparsers.add_parser(
+        "install-completions",
+        help="Install shell auto-completions (bash, zsh, fish)",
+        description="Generate and install tab auto-completion scripts for your shell.",
+    )
     parser_install_completions.set_defaults(func=cmd_install_completions)
 
     # V2 Commands
-    parser_tui = subparsers.add_parser("tui", help="Launch the Textual TUI")
+    parser_tui = subparsers.add_parser(
+        "tui",
+        help="Launch the interactive full-screen Textual TUI interface",
+        description="Open the terminal user interface featuring multi-language badge support, previews, search, and CRUD modals.",
+    )
     parser_tui.set_defaults(func=cmd_tui)
 
-    parser_fzf = subparsers.add_parser("fzf", help="Search snippets using fzf")
+    parser_fzf = subparsers.add_parser(
+        "fzf",
+        help="Interactively search snippets using the fzf fuzzy finder",
+        description="Launch an interactive fzf picker to filter snippets and display syntax-highlighted code.",
+    )
     parser_fzf.set_defaults(func=cmd_fzf)
 
-    parser_copy = subparsers.add_parser("copy", help="Copy a snippet to the clipboard or file")
-    parser_copy.add_argument("id", help="Snippet ID")
+    parser_copy = subparsers.add_parser(
+        "copy",
+        help="Copy a snippet to the system clipboard or append to a file",
+        description="Copy snippet code directly to the clipboard or append it to an output file.",
+    )
+    parser_copy.add_argument("id", help="Snippet ID to copy")
     parser_copy.add_argument("-f", "--file", help="File to append to (optional)")
     parser_copy.set_defaults(func=cmd_copy)
 
-    parser_revise = subparsers.add_parser("revise", help="Spaced-repetition revision (SM-2 algorithm)")
+    parser_revise = subparsers.add_parser(
+        "revise",
+        help="Launch an interactive spaced-repetition revision session (SM-2)",
+        description="Practice active recall of snippets using the SuperMemo SM-2 spaced repetition algorithm.",
+    )
     parser_revise.set_defaults(func=cmd_revise)
 
-    parser_srs_stats = subparsers.add_parser("srs-stats", help="Show spaced-repetition statistics")
+    parser_srs_stats = subparsers.add_parser(
+        "srs-stats",
+        help="Show spaced-repetition revision statistics and retention schedule",
+        description="Display SM-2 recall retention metrics, due counts, and average ease factors.",
+    )
     parser_srs_stats.set_defaults(func=cmd_srs_stats)
 
     args = parser.parse_args()

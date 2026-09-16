@@ -168,9 +168,9 @@ graph TD
 ## 4. Summary of CLI & TUI Options
 
 ### Complete CLI Command Reference
-- `cpkb add [--id-format FORMAT]`
+- `cpkb add [-l LANGUAGE] [--id-format FORMAT]`
 - `cpkb list`
-- `cpkb show <id>`
+- `cpkb show <id> [--json]`
 - `cpkb search <query>`
 - `cpkb query <query> [--limit N]`
 - `cpkb use <id> <file>`
