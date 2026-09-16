@@ -155,6 +155,8 @@ fn test_tui_settings_modal_flow() {
         theme_idx: 2, // Catppuccin Mocha
         lang_idx: 2,  // python
         sort_idx: 1,  // snippet id
+        layout_idx: 0,
+        border_idx: 0,
         focus_idx: 0,
     };
 

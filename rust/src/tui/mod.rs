@@ -111,56 +111,121 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     return Ok(());
                 }
 
+                if code == KeyCode::Char('c') || code == KeyCode::Char('C') {
+                    app.open_custom_theme_modal();
+                    return Ok(());
+                }
+
                 match code {
                     KeyCode::Esc => {
                         app.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                        state.focus_idx = (state.focus_idx + 1) % 3;
+                        state.focus_idx = (state.focus_idx + 1) % 6;
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
-                        state.focus_idx = if state.focus_idx == 0 { 2 } else { state.focus_idx - 1 };
+                        state.focus_idx = if state.focus_idx == 0 { 5 } else { state.focus_idx - 1 };
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
                         let available_themes = get_available_themes(Some(&app.config.display.custom_theme));
-                        if state.focus_idx == 0 {
-                            state.theme_idx = if state.theme_idx == 0 {
-                                available_themes.len() - 1
-                            } else {
-                                state.theme_idx - 1
-                            };
-                            app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
-                        } else if state.focus_idx == 1 {
-                            state.lang_idx = if state.lang_idx == 0 {
-                                SUPPORTED_LANGUAGES.len() - 1
-                            } else {
-                                state.lang_idx - 1
-                            };
-                        } else {
-                            state.sort_idx = if state.sort_idx == 0 {
-                                2
-                            } else {
-                                state.sort_idx - 1
-                            };
+                        match state.focus_idx {
+                            0 => {
+                                state.theme_idx = if state.theme_idx == 0 {
+                                    available_themes.len() - 1
+                                } else {
+                                    state.theme_idx - 1
+                                };
+                                app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
+                            }
+                            1 => {
+                                state.lang_idx = if state.lang_idx == 0 {
+                                    SUPPORTED_LANGUAGES.len() - 1
+                                } else {
+                                    state.lang_idx - 1
+                                };
+                            }
+                            2 => {
+                                state.sort_idx = if state.sort_idx == 0 { 2 } else { state.sort_idx - 1 };
+                            }
+                            3 => {
+                                state.layout_idx = if state.layout_idx == 0 { 1 } else { 0 };
+                            }
+                            4 => {
+                                state.border_idx = if state.border_idx == 0 { 3 } else { state.border_idx - 1 };
+                            }
+                            _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
                         let available_themes = get_available_themes(Some(&app.config.display.custom_theme));
-                        if state.focus_idx == 0 {
-                            state.theme_idx = (state.theme_idx + 1) % available_themes.len();
-                            app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
-                        } else if state.focus_idx == 1 {
-                            state.lang_idx = (state.lang_idx + 1) % SUPPORTED_LANGUAGES.len();
-                        } else {
-                            state.sort_idx = (state.sort_idx + 1) % 3;
+                        match state.focus_idx {
+                            0 => {
+                                state.theme_idx = (state.theme_idx + 1) % available_themes.len();
+                                app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
+                            }
+                            1 => {
+                                state.lang_idx = (state.lang_idx + 1) % SUPPORTED_LANGUAGES.len();
+                            }
+                            2 => {
+                                state.sort_idx = (state.sort_idx + 1) % 3;
+                            }
+                            3 => {
+                                state.layout_idx = (state.layout_idx + 1) % 2;
+                            }
+                            4 => {
+                                state.border_idx = (state.border_idx + 1) % 4;
+                            }
+                            _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Enter => {
-                        app.save_settings(state);
+                        if state.focus_idx == 5 {
+                            app.open_custom_theme_modal();
+                        } else {
+                            app.save_settings(state);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            ActiveModal::CustomTheme(mut state) => {
+                if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s') {
+                    app.save_custom_theme(state);
+                    return Ok(());
+                }
+                match code {
+                    KeyCode::Esc => {
+                        app.active_modal = None;
+                    }
+                    KeyCode::Tab | KeyCode::Down => {
+                        state.focus_idx = (state.focus_idx + 1) % 11;
+                        app.active_modal = Some(ActiveModal::CustomTheme(state));
+                    }
+                    KeyCode::BackTab | KeyCode::Up => {
+                        state.focus_idx = if state.focus_idx == 0 { 10 } else { state.focus_idx - 1 };
+                        app.active_modal = Some(ActiveModal::CustomTheme(state));
+                    }
+                    KeyCode::Enter => {
+                        if state.focus_idx == 10 {
+                            app.save_custom_theme(state);
+                        } else {
+                            state.focus_idx += 1;
+                            app.active_modal = Some(ActiveModal::CustomTheme(state));
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        state.get_value_mut(state.focus_idx).pop();
+                        app.active_modal = Some(ActiveModal::CustomTheme(state));
+                    }
+                    KeyCode::Char(c) => {
+                        if c.is_alphanumeric() || c == '#' || c == '-' || c == '_' {
+                            state.get_value_mut(state.focus_idx).push(c);
+                            app.active_modal = Some(ActiveModal::CustomTheme(state));
+                        }
                     }
                     _ => {}
                 }

@@ -106,12 +106,92 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     std::cmp::Ordering::Equal
 }
 
+pub const LAYOUT_OPTIONS: &[(&str, &str)] = &[
+    ("horizontal", "Horizontal (Side-by-side)"),
+    ("vertical", "Vertical (Stacked)"),
+];
+
+pub const BORDER_OPTIONS: &[(&str, &str)] = &[
+    ("round", "Rounded"),
+    ("solid", "Solid / Plain"),
+    ("double", "Double"),
+    ("thick", "Thick / Heavy"),
+];
+
+pub const CUSTOM_THEME_FIELDS: &[(&str, &str)] = &[
+    ("primary", "Primary (focused borders, headers)"),
+    ("secondary", "Secondary (accents, tags)"),
+    ("warning", "Warning (warnings, alerts)"),
+    ("error", "Error (errors, delete markers)"),
+    ("success", "Success (confirmations, added)"),
+    ("accent", "Accent (highlights, badges)"),
+    ("foreground", "Foreground (main text)"),
+    ("background", "Background (main window bg)"),
+    ("surface", "Surface (card/panel surface)"),
+    ("panel", "Panel (borders, dividers)"),
+    ("boost", "Boost (dimmed text, subtitles)"),
+];
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomThemeModalState {
+    pub primary: String,
+    pub secondary: String,
+    pub warning: String,
+    pub error: String,
+    pub success: String,
+    pub accent: String,
+    pub foreground: String,
+    pub background: String,
+    pub surface: String,
+    pub panel: String,
+    pub boost: String,
+    pub focus_idx: usize, // 0..=10
+}
+
+impl CustomThemeModalState {
+    pub fn get_value(&self, idx: usize) -> &str {
+        match idx {
+            0 => &self.primary,
+            1 => &self.secondary,
+            2 => &self.warning,
+            3 => &self.error,
+            4 => &self.success,
+            5 => &self.accent,
+            6 => &self.foreground,
+            7 => &self.background,
+            8 => &self.surface,
+            9 => &self.panel,
+            10 => &self.boost,
+            _ => "",
+        }
+    }
+
+    pub fn get_value_mut(&mut self, idx: usize) -> &mut String {
+        match idx {
+            0 => &mut self.primary,
+            1 => &mut self.secondary,
+            2 => &mut self.warning,
+            3 => &mut self.error,
+            4 => &mut self.success,
+            5 => &mut self.accent,
+            6 => &mut self.foreground,
+            7 => &mut self.background,
+            8 => &mut self.surface,
+            9 => &mut self.panel,
+            10 => &mut self.boost,
+            _ => &mut self.primary,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SettingsModalState {
     pub theme_idx: usize,
     pub lang_idx: usize,
     pub sort_idx: usize,
-    pub focus_idx: usize, // 0=Theme, 1=Language, 2=Sort
+    pub layout_idx: usize,
+    pub border_idx: usize,
+    pub focus_idx: usize, // 0=Theme, 1=Language, 2=Sort, 3=Layout, 4=Border, 5=Edit Custom Theme
 }
 
 pub const SUPPORTED_LANGUAGES: &[&str] = &[
@@ -126,7 +206,9 @@ pub enum ActiveModal {
     AddSnippet(AddSnippetModalState),
     EditSnippet(EditSnippetModalState),
     Settings(SettingsModalState),
+    CustomTheme(CustomThemeModalState),
 }
+
 
 pub struct App {
     pub app_dir: PathBuf,
@@ -361,12 +443,69 @@ impl App {
             SortOrder::Name => 2,
         };
 
+        let layout_idx = match self.config.display.layout.to_lowercase().as_str() {
+            "vertical" => 1,
+            _ => 0,
+        };
+        let border_idx = match self.config.display.border_style.to_lowercase().as_str() {
+            "solid" | "plain" => 1,
+            "double" => 2,
+            "thick" | "heavy" => 3,
+            _ => 0,
+        };
+
         self.active_modal = Some(ActiveModal::Settings(SettingsModalState {
             theme_idx,
             lang_idx,
             sort_idx,
+            layout_idx,
+            border_idx,
             focus_idx: 0,
         }));
+    }
+
+    pub fn open_custom_theme_modal(&mut self) {
+        let ct = &self.config.display.custom_theme;
+        self.active_modal = Some(ActiveModal::CustomTheme(CustomThemeModalState {
+            primary: ct.primary.clone(),
+            secondary: ct.secondary.clone(),
+            warning: ct.warning.clone(),
+            error: ct.error.clone(),
+            success: ct.success.clone(),
+            accent: ct.accent.clone(),
+            foreground: ct.foreground.clone(),
+            background: ct.background.clone(),
+            surface: ct.surface.clone(),
+            panel: ct.panel.clone(),
+            boost: ct.boost.clone(),
+            focus_idx: 0,
+        }));
+    }
+
+    pub fn save_custom_theme(&mut self, state: CustomThemeModalState) {
+        self.config.display.custom_theme.primary = state.primary;
+        self.config.display.custom_theme.secondary = state.secondary;
+        self.config.display.custom_theme.warning = state.warning;
+        self.config.display.custom_theme.error = state.error;
+        self.config.display.custom_theme.success = state.success;
+        self.config.display.custom_theme.accent = state.accent;
+        self.config.display.custom_theme.foreground = state.foreground;
+        self.config.display.custom_theme.background = state.background;
+        self.config.display.custom_theme.surface = state.surface;
+        self.config.display.custom_theme.panel = state.panel;
+        self.config.display.custom_theme.boost = state.boost;
+
+        // If Custom theme is active, reload theme colors immediately
+        if self.config.display.theme.to_lowercase() == "custom" || self.theme.name == "Custom" {
+            self.theme = crate::tui::theme::from_custom(&self.config.display.custom_theme);
+        }
+
+        if let Err(e) = save_config(&self.app_dir, &self.config) {
+            self.set_status_message(format!("Failed to save custom theme: {}", e));
+        } else {
+            self.set_status_message("Custom theme colors saved successfully!".to_string());
+        }
+        self.active_modal = None;
     }
 
     pub fn toggle_sort(&mut self, conn: &Connection) {
@@ -475,6 +614,8 @@ impl App {
             2 => SortOrder::Name,
             _ => SortOrder::Date,
         };
+        let layout = LAYOUT_OPTIONS[state.layout_idx.min(LAYOUT_OPTIONS.len() - 1)].0;
+        let border = BORDER_OPTIONS[state.border_idx.min(BORDER_OPTIONS.len() - 1)].0;
 
         self.theme = theme.clone();
         self.sort_order = sort_opt;
@@ -485,6 +626,8 @@ impl App {
             SortOrder::Id => "id".to_string(),
             SortOrder::Name => "name".to_string(),
         };
+        self.config.display.layout = layout.to_string();
+        self.config.display.border_style = border.to_string();
 
         if let Err(e) = save_config(&self.app_dir, &self.config) {
             self.set_status_message(format!("Failed to save config: {}", e));
@@ -494,6 +637,7 @@ impl App {
         self.apply_filter();
         self.active_modal = None;
     }
+
 
 
     pub fn set_status_message(&mut self, msg: String) {

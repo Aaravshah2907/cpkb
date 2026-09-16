@@ -9,7 +9,8 @@ use ratatui::widgets::{
 use ratatui::Frame;
 
 use crate::tui::app::{
-    ActiveModal, AddSnippetModalState, App, EditSnippetModalState, SettingsModalState, SUPPORTED_LANGUAGES,
+    ActiveModal, AddSnippetModalState, App, CustomThemeModalState, EditSnippetModalState,
+    SettingsModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, SUPPORTED_LANGUAGES,
 };
 use crate::tui::badges::get_language_badge;
 use crate::tui::theme::{get_available_themes, parse_color, resolve_id_color};
@@ -66,6 +67,7 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
             ActiveModal::AddSnippet(state) => render_add_modal(f, app, size, state),
             ActiveModal::EditSnippet(state) => render_edit_modal(f, app, size, state),
             ActiveModal::Settings(state) => render_settings_modal(f, app, size, state),
+            ActiveModal::CustomTheme(state) => render_custom_theme_modal(f, app, size, &state),
         }
     }
 }
@@ -130,17 +132,29 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
 
 fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
-    let main_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(app.left_panel_percent),
-            Constraint::Percentage(100 - app.left_panel_percent),
-        ])
-        .split(area);
+    let is_vertical = app.config.display.layout.to_lowercase() == "vertical";
+    let main_chunks = if is_vertical {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(app.left_panel_percent),
+                Constraint::Percentage(100 - app.left_panel_percent),
+            ])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(app.left_panel_percent),
+                Constraint::Percentage(100 - app.left_panel_percent),
+            ])
+            .split(area)
+    };
 
     render_snippet_list(f, app, main_chunks[0]);
     render_snippet_detail(f, app, main_chunks[1]);
 }
+
 
 fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = !app.search_active && app.active_modal.is_none();
@@ -482,7 +496,7 @@ fn render_edit_modal(f: &mut Frame, app: &App, area: Rect, state: &EditSnippetMo
 }
 
 fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsModalState) {
-    let modal_area = centered_rect(65, 60, area);
+    let modal_area = centered_rect(68, 75, area);
     f.render_widget(Clear, modal_area);
 
     let available_themes = get_available_themes(Some(&app.config.display.custom_theme));
@@ -493,11 +507,17 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
     let theme_focused = state.focus_idx == 0;
     let lang_focused = state.focus_idx == 1;
     let sort_focused = state.focus_idx == 2;
+    let layout_focused = state.focus_idx == 3;
+    let border_focused = state.focus_idx == 4;
+    let custom_focused = state.focus_idx == 5;
+
     let sort_name = match state.sort_idx {
         1 => "Snippet ID",
         2 => "Snippet Name",
         _ => "Recent / Date",
     };
+    let layout_name = LAYOUT_OPTIONS[state.layout_idx.min(LAYOUT_OPTIONS.len() - 1)].1;
+    let border_name = BORDER_OPTIONS[state.border_idx.min(BORDER_OPTIONS.len() - 1)].1;
 
     let mut lines = vec![
         Line::from(vec![
@@ -542,6 +562,29 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
         ]),
         Line::from(""),
         Line::from(vec![
+            Span::styled(if layout_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled("Display Layout:    ", if layout_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
+            Span::styled(" ◀ ", Style::default().fg(app.theme.secondary)),
+            Span::styled(format!("{:<26}", layout_name), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
+            Span::styled(" ▶ ", Style::default().fg(app.theme.secondary)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(if border_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled("Border Style:      ", if border_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
+            Span::styled(" ◀ ", Style::default().fg(app.theme.secondary)),
+            Span::styled(format!("{:<26}", border_name), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
+            Span::styled(" ▶ ", Style::default().fg(app.theme.secondary)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(if custom_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled("🎨 Edit Custom Theme Colors", if custom_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
+            Span::raw("  "),
+            Span::styled("[Press Enter or 'c' to edit hex colors]", Style::default().fg(app.theme.secondary)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("Config Storage:    ", Style::default().fg(app.theme.text_dim)),
             Span::styled(app.app_dir.join("config.json").display().to_string(), Style::default().fg(app.theme.text)),
         ]),
@@ -573,11 +616,12 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
         Span::raw(" Cancel"),
     ]));
 
+    let bt = border_type_from_config(&app.config.display.border_style);
     let p = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_type(bt)
                 .title(Span::styled(" Settings ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)))
                 .border_style(app.theme.style_border(true))
                 .style(app.theme.style_surface()),
@@ -585,6 +629,80 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
 
     f.render_widget(p, modal_area);
 }
+
+fn render_custom_theme_modal(f: &mut Frame, app: &App, area: Rect, state: &CustomThemeModalState) {
+    let modal_area = centered_rect(75, 80, area);
+    f.render_widget(Clear, modal_area);
+
+    let bt = border_type_from_config(&app.config.display.border_style);
+    let primary = effective_primary(app);
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("🎨 Edit Custom Theme Hex Colors", Style::default().fg(primary).add_modifier(Modifier::BOLD)),
+            Span::styled("  (Type hex code or named color, Tab to next field)", Style::default().fg(app.theme.text_dim)),
+        ]),
+        Line::from(""),
+    ];
+
+    for (idx, &(field_name, field_desc)) in CUSTOM_THEME_FIELDS.iter().enumerate() {
+        let is_focused = state.focus_idx == idx;
+        let val = state.get_value(idx);
+        let parsed = parse_color(val);
+
+        let prefix = if is_focused { "▶ " } else { "  " };
+        let label_style = if is_focused {
+            Style::default().fg(primary).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.text_dim)
+        };
+        let val_style = if is_focused {
+            Style::default().fg(app.theme.text).bg(app.theme.background).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.text)
+        };
+
+        let mut row_spans = vec![
+            Span::styled(prefix, Style::default().fg(primary)),
+            Span::styled(format!("{:<14}", field_name), label_style),
+            Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
+            Span::raw("  "),
+        ];
+
+        if let Some(color) = parsed {
+            row_spans.push(Span::styled("● ", Style::default().fg(color)));
+            row_spans.push(Span::styled(format!("({field_desc})"), Style::default().fg(app.theme.text_dim)));
+        } else {
+            row_spans.push(Span::styled("✖ ", Style::default().fg(app.theme.error)));
+            row_spans.push(Span::styled(format!("({field_desc})"), Style::default().fg(app.theme.text_dim)));
+        }
+
+        lines.push(Line::from(row_spans));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled(" [Enter / Ctrl+s] ", Style::default().bg(app.theme.success).fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::raw(" Save Theme Colors    "),
+        Span::styled(" [Tab / ↑ / ↓] ", Style::default().bg(app.theme.surface).fg(primary).add_modifier(Modifier::BOLD)),
+        Span::raw(" Navigate Fields    "),
+        Span::styled(" [Esc] ", Style::default().bg(app.theme.surface).fg(app.theme.text).add_modifier(Modifier::BOLD)),
+        Span::raw(" Cancel"),
+    ]));
+
+    let p = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(bt)
+                .title(Span::styled(" Custom Theme Palette ", Style::default().fg(primary).add_modifier(Modifier::BOLD)))
+                .border_style(app.theme.style_border(true))
+                .style(app.theme.style_surface()),
+        );
+
+    f.render_widget(p, modal_area);
+}
+
 
 fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let modal_area = centered_rect(65, 65, area);
