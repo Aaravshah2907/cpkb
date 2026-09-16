@@ -60,6 +60,55 @@ ACCENT_COLORS = {
     "red": "#ff5555",
 }
 
+LANGUAGE_OPTIONS: list[tuple[str, str]] = [
+    ("󰌷 C++", "cpp"),
+    (" C", "c"),
+    (" Python", "python"),
+    (" Rust", "rust"),
+    (" JavaScript", "javascript"),
+    (" TypeScript", "typescript"),
+    ("󰟓 Go", "go"),
+    ("󰘐 Java", "java"),
+    (" Lua", "lua"),
+    (" Shell / Bash", "bash"),
+    (" Markdown", "md"),
+    ("󰉿 Plain Text", "text"),
+    ("󰆼 SQL", "sql"),
+]
+
+LANGUAGE_LOGOS: dict[str, str] = {
+    "cpp": "󰌷 C++",
+    "c++": "󰌷 C++",
+    "c": " C",
+    "python": " Py",
+    "py": " Py",
+    "rust": " Rs",
+    "rs": " Rs",
+    "javascript": " JS",
+    "js": " JS",
+    "typescript": " TS",
+    "ts": " TS",
+    "go": "󰟓 Go",
+    "golang": "󰟓 Go",
+    "java": "󰘐 Java",
+    "lua": " Lua",
+    "bash": " Sh",
+    "sh": " Sh",
+    "zsh": " Sh",
+    "markdown": " MD",
+    "md": " MD",
+    "text": "󰉿 Txt",
+    "txt": "󰉿 Txt",
+    "sql": "󰆼 SQL",
+}
+
+def get_language_badge(lang: str) -> str:
+    """Return an icon/badge string for a language, with safe fallback."""
+    if not lang:
+        return "󰉿 Text"
+    norm = str(lang).lower().strip()
+    return LANGUAGE_LOGOS.get(norm, f"󰉿 {lang}")
+
 def get_cosmere_colors() -> dict[str, str]:
     colors = {}
     path = Path(os.path.expanduser("~/.local/bin/cosmere_colors.sh"))
@@ -179,13 +228,13 @@ class AddSnippetModal(ModalScreen[dict]):
     """
     def __init__(
         self,
-        code_language: str = "python",
+        code_language: str = "cpp",
         default_tags: str = "",
         id_formats: dict | None = None,
         default_id_format: str = "default",
     ) -> None:
         super().__init__()
-        self._code_language = code_language
+        self._code_language = code_language or "cpp"
         self._default_tags = default_tags
         self._id_formats = id_formats or {"default": DEFAULT_CONFIG["snippets"]["id_formats"]["default"]}
         self._default_id_format = (
@@ -216,6 +265,19 @@ class AddSnippetModal(ModalScreen[dict]):
                     allow_blank=False,
                     id="id-format-select",
                 )
+                yield Label("Language:")
+                lang_values = [v for _, v in LANGUAGE_OPTIONS]
+                yield Select(
+                    LANGUAGE_OPTIONS,
+                    value=self._code_language if self._code_language in lang_values else "cpp",
+                    allow_blank=False,
+                    id="lang-select",
+                )
+                yield Input(
+                    value=self._code_language if self._code_language not in lang_values else "",
+                    placeholder="Custom language (if not in dropdown)",
+                    id="lang-custom-input",
+                )
                 yield Label("Title:")
                 yield Input(id="title-input")
                 yield Label("Description:")
@@ -225,7 +287,7 @@ class AddSnippetModal(ModalScreen[dict]):
                 yield Label("Tags (comma separated):")
                 yield Input(value=self._default_tags, id="tags-input")
                 yield Label("Code:")
-                yield TextArea(id="code-input", language=self._code_language)
+                yield TextArea(id="code-input", language="markdown" if self._code_language in {"md", "markdown"} else (self._code_language if self._code_language in {"python", "javascript", "rust", "html", "css", "json", "sql"} else "markdown"))
             with Horizontal(classes="modal-actions"):
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
@@ -237,6 +299,8 @@ class AddSnippetModal(ModalScreen[dict]):
             use = self.query_one("#use-input", Input).value.strip()
             tags = self.query_one("#tags-input", Input).value.strip()
             id_format = str(self.query_one("#id-format-select", Select).value)
+            custom_lang = self.query_one("#lang-custom-input", Input).value.strip()
+            language = custom_lang if custom_lang else str(self.query_one("#lang-select", Select).value)
             code = self.query_one("#code-input", TextArea).text.strip()
             if title and code:
                 self.dismiss({
@@ -245,6 +309,7 @@ class AddSnippetModal(ModalScreen[dict]):
                     "use": use,
                     "tags": tags,
                     "id_format": id_format,
+                    "language": language,
                     "code": code,
                 })
             else:
@@ -295,7 +360,7 @@ class EditSnippetModal(ModalScreen[dict]):
 
     def __init__(self, snippet_id: str, title: str, desc: str,
                  use_case: str, tags: str, code: str,
-                 code_language: str = "python") -> None:
+                 language: str = "cpp") -> None:
         super().__init__()
         self._snippet_id = snippet_id
         self._title = title
@@ -303,12 +368,25 @@ class EditSnippetModal(ModalScreen[dict]):
         self._use_case = use_case
         self._tags = tags
         self._code = code
-        self._code_language = code_language
+        self._language = language or "cpp"
 
     def compose(self) -> ComposeResult:
         with Vertical(id="edit-dialog", classes="modal-dialog modal-wide"):
             yield Label(f"✏️  Edit Snippet {self._snippet_id}", id="edit-title", classes="modal-title")
             with VerticalScroll(id="edit-form-body", classes="modal-body"):
+                yield Label("Language:")
+                lang_values = [v for _, v in LANGUAGE_OPTIONS]
+                yield Select(
+                    LANGUAGE_OPTIONS,
+                    value=self._language if self._language in lang_values else "cpp",
+                    allow_blank=False,
+                    id="lang-select",
+                )
+                yield Input(
+                    value=self._language if self._language not in lang_values else "",
+                    placeholder="Custom language (if not in dropdown)",
+                    id="lang-custom-input",
+                )
                 yield Label("Title:")
                 yield Input(value=self._title, id="title-input")
                 yield Label("Description:")
@@ -318,7 +396,7 @@ class EditSnippetModal(ModalScreen[dict]):
                 yield Label("Tags (comma separated):")
                 yield Input(value=self._tags, id="tags-input")
                 yield Label("Code:")
-                yield TextArea(id="code-input", language=self._code_language)
+                yield TextArea(id="code-input", language="markdown" if self._language in {"md", "markdown"} else (self._language if self._language in {"python", "javascript", "rust", "html", "css", "json", "sql"} else "markdown"))
             with Horizontal(classes="modal-actions"):
                 yield Button("Save", variant="success", id="save-btn")
                 yield Button("Cancel", variant="error", id="cancel-btn")
@@ -332,9 +410,11 @@ class EditSnippetModal(ModalScreen[dict]):
             desc = self.query_one("#desc-input", Input).value.strip()
             use = self.query_one("#use-input", Input).value.strip()
             tags = self.query_one("#tags-input", Input).value.strip()
+            custom_lang = self.query_one("#lang-custom-input", Input).value.strip()
+            language = custom_lang if custom_lang else str(self.query_one("#lang-select", Select).value)
             code = self.query_one("#code-input", TextArea).text.strip()
             if title and code:
-                self.dismiss({"title": title, "desc": desc, "use": use, "tags": tags, "code": code})
+                self.dismiss({"title": title, "desc": desc, "use": use, "tags": tags, "code": code, "language": language})
             else:
                 self.notify("Title and Code are required", severity="error")
         else:
@@ -1097,20 +1177,22 @@ class SnippetApp(App):
         if query:
             rows = search_snippets_full(self.cursor, query)
         else:
-            self.cursor.execute("SELECT id, title FROM snippets ORDER BY created_at DESC")
+            self.cursor.execute("SELECT id, title, language FROM snippets ORDER BY created_at DESC")
             rows = self.cursor.fetchall()
             
         if self.active_tag_filter:
             filtered_rows = []
             for row in rows:
-                fields = get_snippet_fields(self.cursor, row[0])
-                if self.active_tag_filter in fields["tags"]:
+                fields = get_snippet_fields(self.cursor, row[0], "tags")
+                if fields and fields[0] and self.active_tag_filter in [t.strip().lower() for t in fields[0].split(',')]:
                     filtered_rows.append(row)
             rows = filtered_rows
 
         self._widget_id_to_snippet = {}
         for row in rows:
             snippet_id = row[0]
+            title = row[1]
+            lang = row[2] if len(row) > 2 and row[2] else "cpp"
             widget_id = f"item_{_sanitize_css_id(snippet_id)}"
             self._widget_id_to_snippet[widget_id] = snippet_id
             color = self._get_format_color(snippet_id)
@@ -1118,7 +1200,8 @@ class SnippetApp(App):
                 color_hex = ACCENT_COLORS[color]
             else:
                 color_hex = color
-            list_view.append(ListItem(Label(f"[{color_hex}]{row[0]}[/] - {row[1]}"), id=widget_id))
+            badge = get_language_badge(lang)
+            list_view.append(ListItem(Label(f"[{color_hex}]{snippet_id}[/] {badge} - {title}"), id=widget_id))
 
         if rows:
             list_view.index = 0
@@ -1149,18 +1232,19 @@ class SnippetApp(App):
             snippet_id = self._widget_id_to_snippet.get(list_view.highlighted_child.id, "")
             if not snippet_id:
                 return
-            row = get_snippet_fields(self.cursor, snippet_id)
+            row = get_snippet_fields(self.cursor, snippet_id, "title, description, use_case, tags, code, language")
             if not row:
                 self.notify(f"Snippet {snippet_id} not found", severity="error")
                 return
 
-            title, desc, use_case, tags, code = row
+            title, desc, use_case, tags, code, language = row
 
             def check_result(result: dict | None) -> None:
                 if result:
                     update_snippet(self.cursor, self.conn, snippet_id,
                                    result["title"], result["desc"],
-                                   result["use"], result["tags"], result["code"])
+                                   result["use"], result["tags"], result["code"],
+                                   result.get("language", language))
                     self.run_worker(self.action_refresh())
                     self.notify(f"Snippet {snippet_id} updated!")
 
@@ -1172,7 +1256,7 @@ class SnippetApp(App):
                     use_case or "",
                     tags or "",
                     code,
-                    self.code_language,
+                    language or self.code_language,
                 ),
                 check_result,
             )
@@ -1237,7 +1321,9 @@ class SnippetApp(App):
                 snippet_id = add_snippet(
                     self.cursor, self.conn,
                     result["title"], result["desc"], result["use"],
-                    result["tags"], result["code"], result["id_format"],
+                    result["tags"], result["code"],
+                    result.get("language", self.code_language),
+                    result["id_format"],
                 )
                 self.run_worker(self.action_refresh())
                 self.notify(f"Added snippet {snippet_id}!")
@@ -1282,14 +1368,18 @@ class SnippetApp(App):
         snippet_id = self._widget_id_to_snippet.get(event.item.id, "")
         if not snippet_id:
             return
-        row = get_snippet_fields(self.cursor, snippet_id)
+        row = get_snippet_fields(self.cursor, snippet_id, "title, description, use_case, tags, code, language")
 
         if row:
-            md_content = f"# {row[0]}\n\n"
-            if row[1]: md_content += f"**Description:** {row[1]}\n\n"
-            if row[2]: md_content += f"**Use Case:** {row[2]}\n\n"
-            if row[3]: md_content += f"**Tags:** {row[3]}\n\n"
-            md_content += f"```{self.code_language}\n{row[4]}\n```\n"
+            title, desc, use_case, tags, code, lang = row
+            lang = lang or "cpp"
+            badge = get_language_badge(lang)
+            md_content = f"# {title}  `{badge}`\n\n"
+            if desc: md_content += f"**Description:** {desc}\n\n"
+            if use_case: md_content += f"**Use Case:** {use_case}\n\n"
+            if tags: md_content += f"**Tags:** {tags}\n\n"
+            md_content += f"**Language:** `{lang}`\n\n"
+            md_content += f"```{lang}\n{code}\n```\n"
 
             # Fetch usages
             usages = get_usages(self.cursor, snippet_id)

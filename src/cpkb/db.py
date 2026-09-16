@@ -17,7 +17,7 @@ XDG_DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "s
 APP_DIR = XDG_DATA_HOME / "cpkb"
 DB_PATH = APP_DIR / "snippets.db"
 KEY_PATH = APP_DIR / "encryption.key"
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 ALLOWED_SNIPPET_FIELDS = {
     "id",
     "title",
@@ -25,6 +25,7 @@ ALLOWED_SNIPPET_FIELDS = {
     "use_case",
     "tags",
     "code",
+    "language",
     "created_at",
     "updated_at",
 }
@@ -92,6 +93,7 @@ def _create_schema(cursor: sqlite3.Cursor) -> None:
             use_case TEXT,
             tags TEXT,
             code TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'cpp',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -173,6 +175,14 @@ def migrate_db(cursor: sqlite3.Cursor, conn: sqlite3.Connection, db_existed: boo
 
     if old_version < 1 and not had_tags:
         _populate_tags_from_snippets(cursor)
+
+    if old_version < 3 and _table_exists(cursor, "snippets"):
+        cursor.execute("PRAGMA table_info(snippets)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "language" not in cols:
+            cursor.execute("ALTER TABLE snippets ADD COLUMN language TEXT NOT NULL DEFAULT 'cpp'")
+        else:
+            cursor.execute("UPDATE snippets SET language = 'cpp' WHERE language IS NULL OR language = ''")
 
     set_schema_version(cursor, CURRENT_SCHEMA_VERSION)
     conn.commit()
@@ -308,14 +318,31 @@ def update_tags(cursor: sqlite3.Cursor, snippet_id: str, tags_str: str) -> None:
 
 def add_snippet(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
                 title: str, description: str, use_case: str,
-                tags: str, code: str, id_format: str | None = None) -> str:
+                tags: str, code: str, language: str | None = None,
+                id_format: str | None = None) -> str:
     """Insert a new snippet and return its generated ID."""
+    config = load_config(APP_DIR)
+    formats = config.get("snippets", {}).get("id_formats", {})
+    if id_format is None and language in formats and language not in {
+        "cpp", "c", "python", "py", "rust", "rs", "javascript", "js",
+        "typescript", "ts", "go", "golang", "java", "lua", "bash", "sh",
+        "markdown", "md", "text", "txt", "sql"
+    }:
+        id_format = language
+        language = None
+
+    if not language:
+        language = str(
+            config.get("snippets", {}).get("code_language")
+            or config.get("default_language", "cpp")
+        )
+
     snippet_id = generate_id(cursor, id_format)
     now = _now()
     cursor.execute('''
-        INSERT INTO snippets (id, title, description, use_case, tags, code, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (snippet_id, title, description, use_case, tags, code, now, now))
+        INSERT INTO snippets (id, title, description, use_case, tags, code, language, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (snippet_id, title, description, use_case, tags, code, language, now, now))
     update_tags(cursor, snippet_id, tags)
     conn.commit()
     return snippet_id
@@ -324,15 +351,17 @@ def add_snippet(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
 def insert_snippet_with_id(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
                            snippet_id: str, title: str, description: str,
                            use_case: str, tags: str, code: str,
+                           language: str = "cpp",
                            created_at: str | None = None,
                            updated_at: str | None = None) -> str:
     """Insert a snippet with a caller-provided ID and return the inserted ID."""
     now = _now()
     cursor.execute('''
-        INSERT INTO snippets (id, title, description, use_case, tags, code, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO snippets (id, title, description, use_case, tags, code, language, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         snippet_id, title, description, use_case, tags, code,
+        language or "cpp",
         created_at or now, updated_at or now,
     ))
     update_tags(cursor, snippet_id, tags)
@@ -379,6 +408,7 @@ def import_snippets(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
             snippet.get("use_case") or "",
             snippet.get("tags") or "",
             code,
+            snippet.get("language") or "cpp",
             snippet.get("created_at"),
             snippet.get("updated_at"),
         )
@@ -412,7 +442,7 @@ def _validate_snippet_fields(fields: str | list[str] | tuple[str, ...]) -> str:
 
 
 def get_snippet_fields(cursor: sqlite3.Cursor, snippet_id: str,
-                       fields: str | list[str] | tuple[str, ...] = "title, description, use_case, tags, code") -> tuple | None:
+                       fields: str | list[str] | tuple[str, ...] = "title, description, use_case, tags, code, language") -> tuple | None:
     """Return selected fields for a snippet or ``None``."""
     cursor.execute(f"SELECT {_validate_snippet_fields(fields)} FROM snippets WHERE id = ?", (snippet_id,))
     return cursor.fetchone()
@@ -420,14 +450,15 @@ def get_snippet_fields(cursor: sqlite3.Cursor, snippet_id: str,
 
 def update_snippet(cursor: sqlite3.Cursor, conn: sqlite3.Connection,
                    snippet_id: str, title: str, description: str,
-                   use_case: str, tags: str, code: str) -> None:
-    """Update an existing snippet's metadata, code, and tags."""
+                   use_case: str, tags: str, code: str,
+                   language: str = "cpp") -> None:
+    """Update an existing snippet's metadata, code, language, and tags."""
     now = _now()
     cursor.execute('''
         UPDATE snippets
-        SET title = ?, description = ?, use_case = ?, tags = ?, code = ?, updated_at = ?
+        SET title = ?, description = ?, use_case = ?, tags = ?, code = ?, language = ?, updated_at = ?
         WHERE id = ?
-    ''', (title, description, use_case, tags, code, now, snippet_id))
+    ''', (title, description, use_case, tags, code, language or "cpp", now, snippet_id))
     update_tags(cursor, snippet_id, tags)
     conn.commit()
 
@@ -477,7 +508,7 @@ def search_snippets(cursor: sqlite3.Cursor, query: str) -> list[tuple]:
 
 
 def search_snippets_full(cursor: sqlite3.Cursor, query: str) -> list[tuple]:
-    """Like :func:`search_snippets` but returns ``(id, title)`` — used by the TUI."""
+    """Like :func:`search_snippets` but returns ``(id, title, language)`` — used by the TUI and CLI."""
     query_parts = query.lower().split()
     conditions = []
     params = []
@@ -489,7 +520,7 @@ def search_snippets_full(cursor: sqlite3.Cursor, query: str) -> list[tuple]:
         )
         params.extend([like_str, like_str, like_str, like_str, like_str])
 
-    sql = "SELECT id, title FROM snippets"
+    sql = "SELECT id, title, language FROM snippets"
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY created_at DESC"

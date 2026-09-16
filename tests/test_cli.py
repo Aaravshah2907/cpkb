@@ -716,12 +716,13 @@ def test_cmd_import_defaults_adds_cpp_cheatsheets(temp_db, capsys):
     assert "Imported 16 snippet(s)" in captured.out
 
     cursor = temp_db.cursor()
-    cursor.execute("SELECT id, title, tags, code FROM snippets WHERE id = ?", ("cp_0001",))
+    cursor.execute("SELECT id, title, tags, code, language FROM snippets WHERE id = ?", ("cp_0001",))
     row = cursor.fetchone()
     assert row is not None
     assert row[1] == "Vector Method Info"
-    assert row[2] == "cheat sheet, helpful"
+    assert "cheat sheet" in row[2] and "markdown" in row[2]
     assert "push_back()" in row[3]
+    assert row[4] == "md"
 
 
 def test_cmd_import_list_defaults_previews_without_importing(temp_db, capsys):
@@ -1027,3 +1028,101 @@ def test_cmd_id_format_add_with_prefix(temp_db, capsys):
     assert config["snippets"]["id_formats"]["legacy"]["prefix"] == "LEG-"
     assert config["snippets"]["id_formats"]["legacy"]["width"] == 4
     assert config["snippets"]["default_id_format"] == "legacy"
+
+
+def test_db_migration_v2_to_v3(capsys):
+    """Test migration from v2 schema adds language column and defaults existing rows to cpp."""
+    temp_dir = tempfile.TemporaryDirectory()
+    temp_path = Path(temp_dir.name) / "test_v2.db"
+    app_dir = Path(temp_dir.name)
+    app_dir.mkdir(exist_ok=True)
+
+    v2_conn = sqlite3.connect(temp_path)
+    v2_conn.execute('''
+        CREATE TABLE snippets (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            use_case TEXT,
+            tags TEXT,
+            code TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    v2_conn.execute('''
+        CREATE TABLE schema_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    v2_conn.execute("INSERT INTO schema_meta VALUES ('schema_version', '2', '2026-01-01T00:00:00')")
+    v2_conn.execute("INSERT INTO snippets VALUES ('CP0001', 'Test V2', 'desc', 'use', 'tags', 'int x = 1;', '2026-01-01', '2026-01-01')")
+    v2_conn.commit()
+    v2_conn.close()
+
+    with patch.object(db, "DB_PATH", temp_path), \
+         patch.object(db, "APP_DIR", app_dir):
+        conn = db.init_db()
+        cursor = conn.cursor()
+        assert db.get_schema_version(cursor) == 3
+
+        cursor.execute("SELECT id, title, language FROM snippets WHERE id = 'CP0001'")
+        row = cursor.fetchone()
+        assert row is not None
+        assert row[2] == "cpp"
+        conn.close()
+
+    temp_dir.cleanup()
+
+
+def test_add_and_show_snippet_with_language(temp_db, capsys):
+    """Test adding snippet with custom language and retrieving it via show and --json."""
+    cursor = temp_db.cursor()
+    snip_id = db.add_snippet(cursor, temp_db, "Python QuickSort", "Sorting", "Algorithm", "sort, py", "def qsort(a): pass", language="python")
+    
+    row = db.get_snippet(cursor, snip_id)
+    assert row[6] == "python"
+
+    # Test cmd_show standard output
+    args_show = MagicMock()
+    args_show.id = snip_id
+    args_show.json = False
+    cli.cmd_show(args_show)
+    captured = capsys.readouterr()
+    assert "Language:    python" in captured.out
+
+    # Test cmd_show --json output
+    args_show.json = True
+    cli.cmd_show(args_show)
+    captured_json = capsys.readouterr()
+    data = json.loads(captured_json.out)
+    assert data["id"] == snip_id
+    assert data["language"] == "python"
+    assert data["title"] == "Python QuickSort"
+    assert "def qsort" in data["code"]
+
+
+def test_export_and_import_preserves_language(temp_db, capsys):
+    """Test export and import preserve snippet language across JSON and Markdown."""
+    cursor = temp_db.cursor()
+    db.add_snippet(cursor, temp_db, "Rust BinarySearch", "Search", "Algo", "search, rust", "fn bsearch() {}", language="rust")
+    
+    # Export JSON
+    cli.cmd_export_json(MagicMock())
+    json_files = list((db.APP_DIR / "exports").glob("snippets_*.json"))
+    assert len(json_files) >= 1
+    content = json.loads(json_files[-1].read_text(encoding="utf-8"))
+    rust_entry = next((s for s in content if s["title"] == "Rust BinarySearch"), None)
+    assert rust_entry is not None
+    assert rust_entry["language"] == "rust"
+
+    # Export Markdown
+    cli.cmd_export(MagicMock())
+    md_files = list((db.APP_DIR / "exports").glob("snippets_*.md"))
+    assert len(md_files) >= 1
+    md_text = md_files[-1].read_text(encoding="utf-8")
+    assert "**Language:** rust" in md_text
+    assert "```rust" in md_text
+

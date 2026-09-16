@@ -6,7 +6,7 @@ from .config import max_snippets
 
 
 USE_CASE = "When you want a quick summary of available default options and their syntax."
-TAGS = "cheat sheet, helpful"
+TAGS = "cheat sheet, helpful, markdown"
 
 
 CHEATSHEETS = [
@@ -306,6 +306,7 @@ Cheat Sheet for {container} present in headerfile:{sheet["header"]}
                 "use_case": USE_CASE,
                 "tags": TAGS,
                 "code": code,
+                "language": "md",
             }
         )
     return snippets

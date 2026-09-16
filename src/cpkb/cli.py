@@ -471,6 +471,9 @@ def cmd_add(args: argparse.Namespace) -> None:
     cursor = conn.cursor()
     config = load_config(APP_DIR)
     default_tags = str(config.get("snippets", {}).get("default_tags") or "")
+    configured_lang = _optional_str_arg(args, "language") or str(
+        config.get("snippets", {}).get("code_language") or config.get("default_language", "cpp")
+    )
 
     print("Adding a new snippet...")
     try:
@@ -478,6 +481,10 @@ def cmd_add(args: argparse.Namespace) -> None:
         description = input("Description: ").strip()
         use_case = input("Use case: ").strip()
         tags = _merge_tags(default_tags, input("Tags (comma separated): ").strip())
+        try:
+            language = _optional_str_arg(args, "language") or _prompt_default("Language", configured_lang)
+        except (EOFError, StopIteration):
+            language = configured_lang
 
         print("Enter the code (Ctrl+D on an empty line to finish):")
         lines = sys.stdin.readlines()
@@ -492,7 +499,7 @@ def cmd_add(args: argparse.Namespace) -> None:
 
     id_format = _optional_str_arg(args, "id_format")
     try:
-        snippet_id = add_snippet(cursor, conn, title, description, use_case, tags, code, id_format)
+        snippet_id = add_snippet(cursor, conn, title, description, use_case, tags, code, language, id_format)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -503,12 +510,12 @@ def cmd_edit(args: argparse.Namespace) -> None:
     conn = init_db()
     cursor = conn.cursor()
 
-    row = get_snippet_fields(cursor, args.id)
+    row = get_snippet_fields(cursor, args.id, "title, description, use_case, tags, code, language")
     if not row:
         print(f"Error: Snippet {args.id} not found.", file=sys.stderr)
         return
 
-    title, description, use_case, tags, code = row
+    title, description, use_case, tags, code, language = row
 
     # Create a temporary file for editing
     with tempfile.NamedTemporaryFile(mode='w+', suffix='.md', delete=False) as tf:
@@ -516,6 +523,7 @@ def cmd_edit(args: argparse.Namespace) -> None:
         tf.write(f"Description: {description}\n")
         tf.write(f"Use case: {use_case}\n")
         tf.write(f"Tags: {tags}\n")
+        tf.write(f"Language: {language}\n")
         tf.write("---\n")
         tf.write(code)
         temp_path = tf.name
@@ -535,7 +543,7 @@ def cmd_edit(args: argparse.Namespace) -> None:
     metadata_lines = parts[0].strip().split('\n')
     new_code = parts[1].strip()
 
-    new_title, new_desc, new_use_case, new_tags = "", "", "", ""
+    new_title, new_desc, new_use_case, new_tags, new_lang = "", "", "", "", language or "cpp"
     for line in metadata_lines:
         if line.lower().startswith('title:'):
             new_title = line.split(':', 1)[1].strip()
@@ -545,12 +553,14 @@ def cmd_edit(args: argparse.Namespace) -> None:
             new_use_case = line.split(':', 1)[1].strip()
         elif line.lower().startswith('tags:'):
             new_tags = line.split(':', 1)[1].strip()
+        elif line.lower().startswith('language:'):
+            new_lang = line.split(':', 1)[1].strip()
 
     if not new_title or not new_code:
         print("Error: Title and code cannot be empty.", file=sys.stderr)
         return
 
-    update_snippet(cursor, conn, args.id, new_title, new_desc, new_use_case, new_tags, new_code)
+    update_snippet(cursor, conn, args.id, new_title, new_desc, new_use_case, new_tags, new_code, new_lang)
     print(f"Snippet {args.id} updated successfully!")
 
 
@@ -605,13 +615,34 @@ def cmd_show(args: argparse.Namespace) -> None:
         print(f"Error: Snippet with ID {args.id} not found.", file=sys.stderr)
         return
 
+    language = row[6] if len(row) > 6 and row[6] else "cpp"
+    created_at = row[7] if len(row) > 7 else (row[6] if len(row) > 6 else "")
+    updated_at = row[8] if len(row) > 8 else (row[7] if len(row) > 7 else "")
+
+    if getattr(args, "json", False):
+        import json
+        data = {
+            "id": row[0],
+            "title": row[1],
+            "description": row[2] or "",
+            "use_case": row[3] or "",
+            "tags": row[4] or "",
+            "code": row[5],
+            "language": language,
+            "created_at": created_at,
+            "updated_at": updated_at,
+        }
+        print(json.dumps(data, indent=2))
+        return
+
     print(f"ID:          {row[0]}")
     print(f"Title:       {row[1]}")
     print(f"Description: {row[2]}")
     print(f"Use Case:    {row[3]}")
     print(f"Tags:        {row[4]}")
-    print(f"Created At:  {row[6]}")
-    print(f"Updated At:  {row[7]}")
+    print(f"Language:    {language}")
+    print(f"Created At:  {created_at}")
+    print(f"Updated At:  {updated_at}")
     print("\n--- Code ---\n")
     print(row[5])
     print("\n------------")
@@ -998,14 +1029,15 @@ def cmd_export(args: argparse.Namespace) -> None:
     export_dir = APP_DIR / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
     out_path = export_dir / f'snippets_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.md'
-    code_language = _configured_code_language()
     with open(out_path, 'w') as f:
         for row in rows:
+            lang = row[6] if len(row) > 6 and row[6] else "cpp"
             f.write(f"## {row[1]} ({row[0]})\n")
             f.write(f"**Description:** {row[2] or ''}\n")
             f.write(f"**Use case:** {row[3] or ''}\n")
             f.write(f"**Tags:** {row[4] or ''}\n")
-            f.write(f"\n```{code_language}\n" + row[5] + "\n```\n\n")
+            f.write(f"**Language:** {lang}\n")
+            f.write(f"\n```{lang}\n" + row[5] + "\n```\n\n")
     print(f"Exported {len(rows)} snippets to {out_path}")
 
 
@@ -1020,7 +1052,10 @@ def cmd_export_json(args: argparse.Namespace) -> None:
     data = [
         {
             "id": r[0], "title": r[1], "description": r[2], "use_case": r[3],
-            "tags": r[4], "code": r[5], "created_at": r[6], "updated_at": r[7],
+            "tags": r[4], "code": r[5],
+            "language": r[6] if len(r) > 6 and r[6] else "cpp",
+            "created_at": r[7] if len(r) > 7 else (r[6] if len(r) > 6 else ""),
+            "updated_at": r[8] if len(r) > 8 else (r[7] if len(r) > 7 else ""),
         } for r in rows
     ]
     export_dir = APP_DIR / "exports"
@@ -1044,11 +1079,13 @@ def cmd_export_html(args: argparse.Namespace) -> None:
     with open(out_path, 'w') as f:
         f.write("<html><head><meta charset='utf-8'><title>CPKB Export</title></head><body>")
         for row in rows:
+            lang = row[6] if len(row) > 6 and row[6] else "cpp"
             f.write(f"<section><h2>{row[1]} ({row[0]})</h2>")
             f.write(f"<p><strong>Description:</strong> {row[2] or ''}</p>")
             f.write(f"<p><strong>Use case:</strong> {row[3] or ''}</p>")
             f.write(f"<p><strong>Tags:</strong> {row[4] or ''}</p>")
-            f.write(f"<pre>{row[5]}</pre></section><hr/>")
+            f.write(f"<p><strong>Language:</strong> {lang}</p>")
+            f.write(f"<pre class='language-{lang}'>{row[5]}</pre></section><hr/>")
         f.write("</body></html>")
     print(f"Exported {len(rows)} snippets to {out_path}")
 
@@ -1109,8 +1146,9 @@ def _snippet_dict_from_row(row: tuple) -> dict:
         "use_case": row[3] or "",
         "tags": row[4] or "",
         "code": row[5],
-        "created_at": row[6],
-        "updated_at": row[7],
+        "language": row[6] if len(row) > 6 and row[6] else "cpp",
+        "created_at": row[7] if len(row) > 7 else (row[6] if len(row) > 6 else ""),
+        "updated_at": row[8] if len(row) > 8 else (row[7] if len(row) > 7 else ""),
     }
 
 
@@ -1172,11 +1210,19 @@ def _load_markdown_snippets(raw: bytes) -> list[dict]:
         r"^## (?P<title>.+?) \((?P<id>[^)]+)\)\n"
         r"\*\*Description:\*\* (?P<description>.*?)\n"
         r"\*\*Use case:\*\* (?P<use_case>.*?)\n"
-        r"\*\*Tags:\*\* (?P<tags>.*?)\n\n"
-        r"```[^\n]*\n(?P<code>.*?)\n```\n?",
+        r"\*\*Tags:\*\* (?P<tags>.*?)\n"
+        r"(?:\*\*Language:\*\* (?P<language>.*?)\n)?"
+        r"\n```(?P<code_lang>[^\n]*)\n(?P<code>.*?)\n```\n?",
         re.MULTILINE | re.DOTALL,
     )
-    return [match.groupdict() for match in pattern.finditer(text)]
+    snippets = []
+    for match in pattern.finditer(text):
+        d = match.groupdict()
+        lang = d.get("language") or d.get("code_lang") or "cpp"
+        d["language"] = lang.strip() if lang else "cpp"
+        d.pop("code_lang", None)
+        snippets.append(d)
+    return snippets
 
 
 def _load_html_snippets(raw: bytes) -> list[dict]:
@@ -1192,7 +1238,8 @@ def _load_html_snippets(raw: bytes) -> list[dict]:
         desc_match = re.search(r"<p><strong>Description:</strong> (?P<value>.*?)</p>", section, re.DOTALL)
         use_match = re.search(r"<p><strong>Use case:</strong> (?P<value>.*?)</p>", section, re.DOTALL)
         tags_match = re.search(r"<p><strong>Tags:</strong> (?P<value>.*?)</p>", section, re.DOTALL)
-        code_match = re.search(r"<pre>(?P<code>.*?)</pre>", section, re.DOTALL)
+        lang_match = re.search(r"<p><strong>Language:</strong> (?P<value>.*?)</p>", section, re.DOTALL)
+        code_match = re.search(r"<pre.*?>(?P<code>.*?)</pre>", section, re.DOTALL)
         if not title_match or not code_match:
             continue
         snippets.append(
@@ -1202,6 +1249,7 @@ def _load_html_snippets(raw: bytes) -> list[dict]:
                 "description": html.unescape(desc_match.group("value").strip()) if desc_match else "",
                 "use_case": html.unescape(use_match.group("value").strip()) if use_match else "",
                 "tags": html.unescape(tags_match.group("value").strip()) if tags_match else "",
+                "language": html.unescape(lang_match.group("value").strip()) if lang_match else "cpp",
                 "code": html.unescape(code_match.group("code").strip()),
             }
         )
@@ -1436,6 +1484,10 @@ def main() -> None:
         "--id-format",
         help="Configured ID format name from config.json snippets.id_formats",
     )
+    parser_add.add_argument(
+        "-l", "--language",
+        help="Programming language for the snippet (e.g., cpp, python, rust, md)",
+    )
     parser_add.set_defaults(func=cmd_add)
 
     parser_list = subparsers.add_parser("list", help="List all snippets")
@@ -1443,6 +1495,11 @@ def main() -> None:
 
     parser_show = subparsers.add_parser("show", help="Show a specific snippet")
     parser_show.add_argument("id", help="Snippet ID (e.g., CP0001)")
+    parser_show.add_argument(
+        "--json",
+        action="store_true",
+        help="Output snippet metadata and code formatted as JSON",
+    )
     parser_show.set_defaults(func=cmd_show)
 
     parser_search = subparsers.add_parser("search", help="Search snippets")

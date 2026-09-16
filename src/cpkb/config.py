@@ -47,6 +47,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "prefix": "CP",
                 "width": "auto",
             },
+            "ms": {
+                "prefix": "ms_",
+                "width": "auto",
+            },
         },
     },
     "keybindings": {
