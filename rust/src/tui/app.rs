@@ -4,25 +4,65 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use ratatui::widgets::ListState;
 use rusqlite::Connection;
 
 use crate::clipboard::copy_to_clipboard;
-use crate::config::load_config;
-use crate::db::snippets::{delete_snippet, get_snippet, list_snippets, Snippet, SnippetSummary};
+use crate::config::{load_config, save_config, Config};
+use crate::db::snippets::{add_snippet, delete_snippet, get_snippet, list_snippets, update_snippet, Snippet, SnippetSummary};
 use crate::tui::syntax::SyntaxHighlighter;
-use crate::tui::theme::{get_theme_by_name, Theme};
+use crate::tui::theme::{get_theme_by_name, Theme, THEMES};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AddSnippetModalState {
+    pub title: String,
+    pub description: String,
+    pub use_case: String,
+    pub tags: String,
+    pub language: String,
+    pub code: String,
+    pub focus_idx: usize, // 0..=5
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EditSnippetModalState {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub use_case: String,
+    pub tags: String,
+    pub language: String,
+    pub code: String,
+    pub focus_idx: usize, // 0..=5
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingsModalState {
+    pub theme_idx: usize,
+    pub lang_idx: usize,
+    pub focus_idx: usize, // 0=Theme, 1=Language
+}
+
+pub const SUPPORTED_LANGUAGES: &[&str] = &[
+    "cpp", "c", "python", "rust", "tex", "javascript", "typescript", "go", "java", "lua", "bash", "markdown", "sql", "text",
+];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActiveModal {
     Help,
     DeleteConfirm(String), // Snippet ID to delete
+    AddSnippet(AddSnippetModalState),
+    EditSnippet(EditSnippetModalState),
+    Settings(SettingsModalState),
 }
 
 pub struct App {
     pub app_dir: PathBuf,
+    pub config: Config,
     pub all_snippets: Vec<SnippetSummary>,
     pub filtered_indices: Vec<usize>,
     pub selected_index: usize,
+    pub list_state: ListState,
     pub active_snippet: Option<Snippet>,
     pub search_query: String,
     pub search_active: bool,
@@ -40,13 +80,20 @@ impl App {
         let config = load_config(app_dir);
         let theme = get_theme_by_name(&config.display.theme);
         let all_snippets = list_snippets(conn).unwrap_or_default();
-        let filtered_indices = (0..all_snippets.len()).collect();
+        let filtered_indices: Vec<usize> = (0..all_snippets.len()).collect();
+
+        let mut list_state = ListState::default();
+        if !filtered_indices.is_empty() {
+            list_state.select(Some(0));
+        }
 
         let mut app = Self {
             app_dir: app_dir.to_path_buf(),
+            config,
             all_snippets,
             filtered_indices,
             selected_index: 0,
+            list_state,
             active_snippet: None,
             search_query: String::new(),
             search_active: false,
@@ -74,6 +121,7 @@ impl App {
     pub fn reload_active_snippet(&mut self, conn: &Connection) {
         if self.filtered_indices.is_empty() {
             self.active_snippet = None;
+            self.list_state.select(None);
             return;
         }
 
@@ -81,6 +129,7 @@ impl App {
             self.selected_index = self.filtered_indices.len().saturating_sub(1);
         }
 
+        self.list_state.select(Some(self.selected_index));
         let actual_idx = self.filtered_indices[self.selected_index];
         let summary = &self.all_snippets[actual_idx];
         self.active_snippet = get_snippet(conn, &summary.id).ok().flatten();
@@ -105,6 +154,7 @@ impl App {
         if self.selected_index >= self.filtered_indices.len() {
             self.selected_index = 0;
         }
+        self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(self.selected_index) });
     }
 
     pub fn next(&mut self, conn: &Connection) {
@@ -168,6 +218,48 @@ impl App {
         }
     }
 
+    pub fn open_add_modal(&mut self) {
+        let default_lang = self.config.default_language.clone();
+        self.active_modal = Some(ActiveModal::AddSnippet(AddSnippetModalState {
+            title: String::new(),
+            description: String::new(),
+            use_case: String::new(),
+            tags: String::new(),
+            language: if default_lang.is_empty() { "cpp".to_string() } else { default_lang },
+            code: String::new(),
+            focus_idx: 0,
+        }));
+    }
+
+    pub fn open_edit_modal(&mut self) {
+        if let Some(ref snip) = self.active_snippet {
+            self.active_modal = Some(ActiveModal::EditSnippet(EditSnippetModalState {
+                id: snip.id.clone(),
+                title: snip.title.clone(),
+                description: snip.description.clone(),
+                use_case: snip.use_case.clone(),
+                tags: snip.tags.clone(),
+                language: snip.language.clone(),
+                code: snip.code.clone(),
+                focus_idx: 0,
+            }));
+        }
+    }
+
+    pub fn open_settings_modal(&mut self) {
+        let current_theme_name = self.theme.name;
+        let theme_idx = THEMES.iter().position(|(name, _)| *name == current_theme_name).unwrap_or(0);
+
+        let current_lang = self.config.default_language.to_lowercase();
+        let lang_idx = SUPPORTED_LANGUAGES.iter().position(|l| *l == current_lang).unwrap_or(0);
+
+        self.active_modal = Some(ActiveModal::Settings(SettingsModalState {
+            theme_idx,
+            lang_idx,
+            focus_idx: 0,
+        }));
+    }
+
     pub fn confirm_delete_current(&mut self) {
         if let Some(ref snip) = self.active_snippet {
             self.active_modal = Some(ActiveModal::DeleteConfirm(snip.id.clone()));
@@ -186,6 +278,80 @@ impl App {
             Err(e) => {
                 self.set_status_message(format!("Failed to delete {}: {}", id, e));
             }
+        }
+        self.active_modal = None;
+    }
+
+    pub fn save_new_snippet(&mut self, conn: &mut Connection, state: AddSnippetModalState) {
+        if state.title.trim().is_empty() || state.code.trim().is_empty() {
+            self.set_status_message("Title and Code cannot be empty!".to_string());
+            return;
+        }
+
+        match add_snippet(
+            conn,
+            &self.app_dir,
+            &state.title,
+            &state.description,
+            &state.use_case,
+            &state.tags,
+            &state.code,
+            Some(&state.language),
+            None,
+        ) {
+            Ok(id) => {
+                self.set_status_message(format!("Created snippet {} successfully!", id));
+                self.active_modal = None;
+                self.reload_snippets(conn);
+            }
+            Err(e) => {
+                self.set_status_message(format!("Failed to create snippet: {}", e));
+            }
+        }
+    }
+
+    pub fn save_edited_snippet(&mut self, conn: &mut Connection, state: EditSnippetModalState) {
+        if state.title.trim().is_empty() || state.code.trim().is_empty() {
+            self.set_status_message("Title and Code cannot be empty!".to_string());
+            return;
+        }
+
+        match update_snippet(
+            conn,
+            &state.id,
+            &state.title,
+            &state.description,
+            &state.use_case,
+            &state.tags,
+            &state.code,
+            &state.language,
+        ) {
+            Ok(true) => {
+                self.set_status_message(format!("Updated snippet {} successfully!", state.id));
+                self.active_modal = None;
+                self.reload_snippets(conn);
+            }
+            Ok(false) => {
+                self.set_status_message(format!("Snippet {} not found", state.id));
+            }
+            Err(e) => {
+                self.set_status_message(format!("Failed to update snippet: {}", e));
+            }
+        }
+    }
+
+    pub fn save_settings(&mut self, state: SettingsModalState) {
+        let (theme_name, theme) = &THEMES[state.theme_idx];
+        let lang = SUPPORTED_LANGUAGES[state.lang_idx];
+
+        self.theme = theme.clone();
+        self.config.display.theme = theme_name.to_lowercase().replace(' ', "-");
+        self.config.default_language = lang.to_string();
+
+        if let Err(e) = save_config(&self.app_dir, &self.config) {
+            self.set_status_message(format!("Failed to save config: {}", e));
+        } else {
+            self.set_status_message(format!("Settings saved: Theme = {}, Default Lang = {}", theme_name, lang));
         }
         self.active_modal = None;
     }

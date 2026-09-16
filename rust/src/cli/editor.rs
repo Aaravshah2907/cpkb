@@ -104,6 +104,21 @@ pub fn open_snippet_editor(app_dir: &Path, snip: &Snippet) -> Result<Option<Edit
     }))
 }
 
+pub fn open_snippet_creator(app_dir: &Path, default_lang: &str) -> Result<Option<EditedSnippet>, Box<dyn std::error::Error>> {
+    let dummy = Snippet {
+        id: "".to_string(),
+        title: "".to_string(),
+        description: "".to_string(),
+        use_case: "".to_string(),
+        tags: "".to_string(),
+        code: "".to_string(),
+        language: default_lang.to_string(),
+        created_at: "".to_string(),
+        updated_at: "".to_string(),
+    };
+    open_snippet_editor(app_dir, &dummy)
+}
+
 pub struct EditedUsage {
     pub file_path: String,
     pub problem_name: String,

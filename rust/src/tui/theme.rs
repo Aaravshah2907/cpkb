@@ -105,9 +105,69 @@ pub const THEME_DRACULA: Theme = Theme {
     error: Color::Rgb(255, 85, 85),
 };
 
+pub const THEME_TOKYO_NIGHT: Theme = Theme {
+    name: "Tokyo Night",
+    background: Color::Rgb(26, 27, 38),
+    surface: Color::Rgb(36, 40, 59),
+    border: Color::Rgb(65, 72, 104),
+    border_focused: Color::Rgb(122, 162, 247),
+    primary: Color::Rgb(122, 162, 247),
+    secondary: Color::Rgb(224, 175, 104),
+    accent: Color::Rgb(187, 154, 247),
+    text: Color::Rgb(192, 202, 245),
+    text_dim: Color::Rgb(86, 95, 137),
+    success: Color::Rgb(158, 206, 106),
+    warning: Color::Rgb(224, 175, 104),
+    error: Color::Rgb(247, 118, 142),
+};
+
+pub const THEME_NORD: Theme = Theme {
+    name: "Nord",
+    background: Color::Rgb(46, 52, 64),
+    surface: Color::Rgb(59, 66, 82),
+    border: Color::Rgb(76, 86, 106),
+    border_focused: Color::Rgb(136, 192, 208),
+    primary: Color::Rgb(136, 192, 208),
+    secondary: Color::Rgb(235, 203, 139),
+    accent: Color::Rgb(180, 142, 173),
+    text: Color::Rgb(236, 239, 244),
+    text_dim: Color::Rgb(147, 158, 179),
+    success: Color::Rgb(163, 190, 140),
+    warning: Color::Rgb(235, 203, 139),
+    error: Color::Rgb(191, 97, 106),
+};
+
+pub const THEME_GRUVBOX: Theme = Theme {
+    name: "Gruvbox",
+    background: Color::Rgb(40, 40, 40),
+    surface: Color::Rgb(60, 56, 54),
+    border: Color::Rgb(102, 92, 84),
+    border_focused: Color::Rgb(250, 189, 47),
+    primary: Color::Rgb(250, 189, 47),
+    secondary: Color::Rgb(254, 128, 25),
+    accent: Color::Rgb(211, 134, 155),
+    text: Color::Rgb(235, 219, 178),
+    text_dim: Color::Rgb(168, 153, 132),
+    success: Color::Rgb(184, 187, 38),
+    warning: Color::Rgb(250, 189, 47),
+    error: Color::Rgb(251, 73, 52),
+};
+
+pub const THEMES: &[(&str, Theme)] = &[
+    ("Cosmere", THEME_COSMERE),
+    ("Catppuccin Mocha", THEME_CATPPUCCIN),
+    ("Tokyo Night", THEME_TOKYO_NIGHT),
+    ("Nord", THEME_NORD),
+    ("Gruvbox", THEME_GRUVBOX),
+    ("Dracula", THEME_DRACULA),
+];
+
 pub fn get_theme_by_name(name: &str) -> Theme {
     match name.to_lowercase().trim() {
         "catppuccin" | "mocha" | "catppuccin-mocha" => THEME_CATPPUCCIN,
+        "tokyo-night" | "tokyonight" => THEME_TOKYO_NIGHT,
+        "nord" => THEME_NORD,
+        "gruvbox" => THEME_GRUVBOX,
         "dracula" => THEME_DRACULA,
         _ => THEME_COSMERE,
     }
