@@ -251,8 +251,8 @@ pub fn default_app_dir() -> PathBuf {
             return PathBuf::from(override_dir);
         }
     }
-    if let Some(data_dir) = dirs::data_dir() {
-        data_dir.join("cpkb")
+    if let Some(home) = dirs::home_dir() {
+        home.join(".local").join("share").join("cpkb")
     } else {
         PathBuf::from(".cpkb")
     }

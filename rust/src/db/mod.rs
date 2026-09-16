@@ -15,12 +15,13 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use crate::config::{default_app_dir, load_config, max_backups, save_config};
 use crate::db::schema::{CREATE_SCHEMA_SQL, CURRENT_SCHEMA_VERSION};
 
-/// Return the path to the main database file (`cpkb.db`).
+/// Return the path to the main database file (`snippets.db`).
+/// Matches the Python CPKB implementation which uses `snippets.db`.
 pub fn db_path(app_dir: &Path) -> PathBuf {
-    app_dir.join("cpkb.db")
+    app_dir.join("snippets.db")
 }
 
-/// Open a SQLite connection to `cpkb.db` with foreign keys enabled.
+/// Open a SQLite connection to `snippets.db` with foreign keys enabled.
 pub fn get_conn(app_dir: &Path) -> Result<Connection> {
     fs::create_dir_all(app_dir).ok();
     let path = db_path(app_dir);

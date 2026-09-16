@@ -323,3 +323,87 @@ pub fn recent_snippets(conn: &Connection, limit: u32) -> Result<Vec<SnippetSumma
     }
     Ok(result)
 }
+
+/// List ALL snippets with full data, ordered by creation date ascending (for export).
+pub fn list_all_snippets(conn: &Connection) -> Result<Vec<FullSnippetExport>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, description, use_case, tags, code, language, created_at, updated_at
+         FROM snippets ORDER BY created_at ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(FullSnippetExport {
+            id:          row.get(0)?,
+            title:       row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            description: row.get(2)?,
+            use_case:    row.get(3)?,
+            tags:        row.get(4)?,
+            code:        row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+            language:    row.get(6)?,
+            created_at:  row.get(7)?,
+            updated_at:  row.get(8)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for r in rows { result.push(r?); }
+    Ok(result)
+}
+
+/// Return true if a snippet with `id` exists.
+pub fn snippet_exists(conn: &Connection, id: &str) -> Result<bool> {
+    let count: u32 = conn.query_row(
+        "SELECT COUNT(*) FROM snippets WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+/// Generate a new ID without requiring `app_dir` — uses the live DB to infer
+/// the default format. Falls back to `generate_id` with `None` format.
+/// Exposed for the import engine which holds only a `Connection`.
+pub fn generate_next_id(conn: &Connection, id_format: Option<&str>) -> anyhow::Result<String> {
+    // We cannot call load_config without app_dir here; use a CP#### fallback
+    // derived purely from existing IDs so we don't need the FS.
+    let prefix = id_format
+        .map(|f| f.to_uppercase())
+        .unwrap_or_else(|| "CP".to_string());
+
+    let mut stmt = conn.prepare("SELECT id FROM snippets")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+
+    let mut max_num: u32 = 0;
+    for id_res in rows {
+        if let Ok(id_str) = id_res {
+            if id_str.starts_with(&prefix) {
+                let num_part = &id_str[prefix.len()..];
+                if let Ok(n) = num_part.parse::<u32>() {
+                    max_num = max_num.max(n);
+                }
+            }
+        }
+    }
+
+    let next = max_num + 1;
+    let width = 4.max(next.to_string().len());
+    Ok(format!("{}{:0width$}", prefix, next, width = width))
+}
+
+/// Count all snippets in the database.
+pub fn count_snippets(conn: &Connection) -> Result<u64> {
+    conn.query_row("SELECT COUNT(*) FROM snippets", [], |row| row.get(0))
+}
+
+/// A rich snippet record for export operations (all fields optional-aware).
+#[derive(Debug, Clone)]
+pub struct FullSnippetExport {
+    pub id:          String,
+    pub title:       String,
+    pub description: Option<String>,
+    pub use_case:    Option<String>,
+    pub tags:        Option<String>,
+    pub code:        String,
+    pub language:    Option<String>,
+    pub created_at:  Option<String>,
+    pub updated_at:  Option<String>,
+}
+
