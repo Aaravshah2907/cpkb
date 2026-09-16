@@ -92,3 +92,91 @@ pub fn export_html(conn: &Connection, app_dir: &Path) -> anyhow::Result<(usize, 
     std::fs::write(&out_path, html)?;
     Ok((count, out_path))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use crate::db::{get_in_memory_conn, snippets::insert_snippet_with_id};
+
+    /// Helper: insert a snippet with a given title (all other fields left minimal).
+    fn insert(conn: &mut rusqlite::Connection, id: &str, title: &str) {
+        insert_snippet_with_id(conn, id, title, "", "", "", "// code", "text", None, None)
+            .expect("insert_snippet_with_id failed");
+    }
+
+    #[test]
+    fn test_export_html_creates_file() {
+        let mut conn = get_in_memory_conn().unwrap();
+        let dir = tempdir().unwrap();
+
+        insert(&mut conn, "h1", "Snippet One");
+        insert(&mut conn, "h2", "Snippet Two");
+
+        let (count, path) = export_html(&conn, dir.path()).unwrap();
+
+        assert_eq!(count, 2, "should report 2 exported snippets");
+        assert!(path.exists(), "HTML output file must be created");
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            content.contains("<!DOCTYPE html>"),
+            "output must begin with a valid HTML5 doctype"
+        );
+    }
+
+    #[test]
+    fn test_export_html_escapes_special_chars() {
+        let mut conn = get_in_memory_conn().unwrap();
+        let dir = tempdir().unwrap();
+
+        // Title contains characters that must be HTML-escaped
+        insert_snippet_with_id(
+            &mut conn,
+            "esc1",
+            "A & B < C",
+            "",
+            "",
+            "",
+            "code",
+            "text",
+            None,
+            None,
+        )
+        .unwrap();
+
+        let (_count, path) = export_html(&conn, dir.path()).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+
+        assert!(
+            content.contains("&amp;"),
+            "ampersand must be escaped to &amp; in HTML output"
+        );
+        assert!(
+            content.contains("&lt;"),
+            "less-than must be escaped to &lt; in HTML output"
+        );
+    }
+
+    #[test]
+    fn test_export_html_contains_snippet_titles() {
+        let mut conn = get_in_memory_conn().unwrap();
+        let dir = tempdir().unwrap();
+
+        insert(&mut conn, "t1", "Alpha");
+        insert(&mut conn, "t2", "Beta");
+
+        let (_count, path) = export_html(&conn, dir.path()).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+
+        assert!(
+            content.contains("Alpha"),
+            "HTML output must contain snippet title 'Alpha'"
+        );
+        assert!(
+            content.contains("Beta"),
+            "HTML output must contain snippet title 'Beta'"
+        );
+    }
+}
+
