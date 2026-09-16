@@ -102,49 +102,59 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
                 _ => {}
             },
-            ActiveModal::Settings(mut state) => match code {
-                KeyCode::Esc => {
-                    app.active_modal = None;
+            ActiveModal::Settings(mut state) => {
+                if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e'))
+                    || code == KeyCode::Char('e')
+                    || code == KeyCode::Char('E')
+                {
+                    launch_editor_config(terminal, app)?;
+                    return Ok(());
                 }
-                KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                    state.focus_idx = (state.focus_idx + 1) % 2;
-                    app.active_modal = Some(ActiveModal::Settings(state));
-                }
-                KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
-                    state.focus_idx = if state.focus_idx == 0 { 1 } else { 0 };
-                    app.active_modal = Some(ActiveModal::Settings(state));
-                }
-                KeyCode::Left | KeyCode::Char('h') => {
-                    if state.focus_idx == 0 {
-                        state.theme_idx = if state.theme_idx == 0 {
-                            THEMES.len() - 1
-                        } else {
-                            state.theme_idx - 1
-                        };
-                        app.theme = THEMES[state.theme_idx].1.clone(); // Live theme preview
-                    } else {
-                        state.lang_idx = if state.lang_idx == 0 {
-                            SUPPORTED_LANGUAGES.len() - 1
-                        } else {
-                            state.lang_idx - 1
-                        };
+
+                match code {
+                    KeyCode::Esc => {
+                        app.active_modal = None;
                     }
-                    app.active_modal = Some(ActiveModal::Settings(state));
-                }
-                KeyCode::Right | KeyCode::Char('l') => {
-                    if state.focus_idx == 0 {
-                        state.theme_idx = (state.theme_idx + 1) % THEMES.len();
-                        app.theme = THEMES[state.theme_idx].1.clone(); // Live theme preview
-                    } else {
-                        state.lang_idx = (state.lang_idx + 1) % SUPPORTED_LANGUAGES.len();
+                    KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
+                        state.focus_idx = (state.focus_idx + 1) % 2;
+                        app.active_modal = Some(ActiveModal::Settings(state));
                     }
-                    app.active_modal = Some(ActiveModal::Settings(state));
+                    KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
+                        state.focus_idx = if state.focus_idx == 0 { 1 } else { 0 };
+                        app.active_modal = Some(ActiveModal::Settings(state));
+                    }
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        if state.focus_idx == 0 {
+                            state.theme_idx = if state.theme_idx == 0 {
+                                THEMES.len() - 1
+                            } else {
+                                state.theme_idx - 1
+                            };
+                            app.theme = THEMES[state.theme_idx].1.clone(); // Live theme preview
+                        } else {
+                            state.lang_idx = if state.lang_idx == 0 {
+                                SUPPORTED_LANGUAGES.len() - 1
+                            } else {
+                                state.lang_idx - 1
+                            };
+                        }
+                        app.active_modal = Some(ActiveModal::Settings(state));
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        if state.focus_idx == 0 {
+                            state.theme_idx = (state.theme_idx + 1) % THEMES.len();
+                            app.theme = THEMES[state.theme_idx].1.clone(); // Live theme preview
+                        } else {
+                            state.lang_idx = (state.lang_idx + 1) % SUPPORTED_LANGUAGES.len();
+                        }
+                        app.active_modal = Some(ActiveModal::Settings(state));
+                    }
+                    KeyCode::Enter => {
+                        app.save_settings(state);
+                    }
+                    _ => {}
                 }
-                KeyCode::Enter => {
-                    app.save_settings(state);
-                }
-                _ => {}
-            },
+            }
             ActiveModal::AddSnippet(mut state) => {
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e') {
                     // Launch $EDITOR for new snippet
@@ -410,6 +420,40 @@ fn launch_editor_edit<B: ratatui::backend::Backend>(
         terminal.clear()?;
         app.active_modal = None;
     }
+
+    Ok(())
+}
+
+fn launch_editor_config<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> io::Result<()> {
+    let config_path = app.app_dir.join("config.json");
+    if !config_path.exists() {
+        let _ = crate::config::save_config(&app.app_dir, &app.config);
+    }
+
+    // Suspend TUI
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+
+    let editor_cmd = crate::cli::editor::configured_editor_command(&app.app_dir);
+    let _ = std::process::Command::new(&editor_cmd[0])
+        .args(&editor_cmd[1..])
+        .arg(&config_path)
+        .status();
+
+    // Reload config & theme
+    app.config = crate::config::load_config(&app.app_dir);
+    app.theme = crate::tui::theme::get_theme_by_name(&app.config.display.theme);
+    app.set_status_message("Configuration reloaded from config.json!".to_string());
+
+    // Resume TUI
+    enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen)?;
+    terminal.clear()?;
+    app.active_modal = None;
 
     Ok(())
 }
