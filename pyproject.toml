@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cpkb"
-version = "2.2.14"
+version = "3.0.0"
 authors = [
   { name="Aarav Shah" },
 ]
-description = "A terminal-first Competitive Programming Knowledge Base"
+description = "A terminal-first Competitive Programming Knowledge Base (Rust-native TUI)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

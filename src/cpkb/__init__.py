@@ -2,4 +2,4 @@
 CPKB - Competitive Programming Knowledge Base
 """
 
-__version__ = "2.2.14"
+__version__ = "3.0.0"
