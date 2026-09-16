@@ -12,7 +12,7 @@ use crate::tui::app::{
     ActiveModal, AddSnippetModalState, App, EditSnippetModalState, SettingsModalState, SUPPORTED_LANGUAGES,
 };
 use crate::tui::badges::get_language_badge;
-use crate::tui::theme::THEMES;
+use crate::tui::theme::{get_available_themes, get_id_color};
 
 pub fn render_ui(f: &mut Frame, app: &mut App) {
     let size = f.area();
@@ -128,6 +128,9 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
             let is_selected = disp_idx == app.selected_index;
 
             let prefix = if is_selected { "▎ " } else { "  " };
+            let id_color = get_id_color(&snip.id);
+            let badge = get_language_badge(&snip.language);
+
             let title_style = if is_selected {
                 Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
             } else {
@@ -135,14 +138,15 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
             };
 
             let id_style = if is_selected {
-                Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)
+                Style::default().fg(id_color).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(app.theme.text_dim)
+                Style::default().fg(id_color)
             };
 
             let line1 = Line::from(vec![
                 Span::styled(prefix, Style::default().fg(app.theme.primary)),
-                Span::styled(format!("{:<10}", snip.id), id_style),
+                Span::styled(format!("{:<8} ", snip.id), id_style),
+                Span::styled(format!("{} ", badge.icon), Style::default().fg(badge.color)),
                 Span::styled(&snip.title, title_style),
             ]);
 
@@ -154,6 +158,7 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
 
             let line2 = Line::from(vec![
                 Span::raw("    "),
+                Span::styled(format!("{:<7} ", badge.name), Style::default().fg(badge.color).add_modifier(Modifier::DIM)),
                 Span::styled(format!("Tags: {}", tag_str), Style::default().fg(app.theme.text_dim)),
             ]);
 
@@ -184,6 +189,7 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_snippet_detail(f: &mut Frame, app: &App, area: Rect) {
     if let Some(ref snip) = app.active_snippet {
         let badge = get_language_badge(&snip.language);
+        let id_color = get_id_color(&snip.id);
 
         let detail_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -193,11 +199,11 @@ fn render_snippet_detail(f: &mut Frame, app: &App, area: Rect) {
         // Metadata Header
         let meta_lines = vec![
             Line::from(vec![
-                Span::styled(format!(" {} ", snip.id), Style::default().bg(app.theme.primary).fg(app.theme.background).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {} ", snip.id), Style::default().bg(id_color).fg(Color::Black).add_modifier(Modifier::BOLD)),
                 Span::raw("  "),
                 Span::styled(&snip.title, Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
                 Span::raw("   "),
-                Span::styled(format!(" {} {} ", badge.icon, badge.name), Style::default().bg(badge.color).fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {} {} ", badge.icon, badge.name), Style::default().bg(badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -228,7 +234,7 @@ fn render_snippet_detail(f: &mut Frame, app: &App, area: Rect) {
 
         // Highlighted Code Pane
         let highlighted_lines = app.highlighter.highlight(&snip.code, &snip.language);
-        let code_title = format!(" Code Preview ({}) ", badge.name);
+        let code_title = format!(" Code Preview ({} {}) ", badge.icon, badge.name);
         let code_p = Paragraph::new(highlighted_lines)
             .block(
                 Block::default()
@@ -319,11 +325,22 @@ fn render_add_modal(f: &mut Frame, app: &App, area: Rect, state: &AddSnippetModa
             Style::default().fg(app.theme.text)
         };
 
-        lines.push(Line::from(vec![
-            Span::styled(prefix, Style::default().fg(app.theme.primary)),
-            Span::styled(format!("{:<26}", label), label_style),
-            Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
-        ]));
+        if idx == 4 {
+            let lang_badge = get_language_badge(val);
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(app.theme.primary)),
+                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
+                Span::raw("  "),
+                Span::styled(format!(" {} {} ", lang_badge.icon, lang_badge.name), Style::default().bg(lang_badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(app.theme.primary)),
+                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
+            ]));
+        }
     }
 
     lines.push(Line::from(""));
@@ -384,11 +401,22 @@ fn render_edit_modal(f: &mut Frame, app: &App, area: Rect, state: &EditSnippetMo
             Style::default().fg(app.theme.text)
         };
 
-        lines.push(Line::from(vec![
-            Span::styled(prefix, Style::default().fg(app.theme.primary)),
-            Span::styled(format!("{:<26}", label), label_style),
-            Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
-        ]));
+        if idx == 4 {
+            let lang_badge = get_language_badge(val);
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(app.theme.primary)),
+                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
+                Span::raw("  "),
+                Span::styled(format!(" {} {} ", lang_badge.icon, lang_badge.name), Style::default().bg(lang_badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(app.theme.primary)),
+                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
+            ]));
+        }
     }
 
     lines.push(Line::from(""));
@@ -415,16 +443,18 @@ fn render_edit_modal(f: &mut Frame, app: &App, area: Rect, state: &EditSnippetMo
 }
 
 fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsModalState) {
-    let modal_area = centered_rect(65, 55, area);
+    let modal_area = centered_rect(65, 60, area);
     f.render_widget(Clear, modal_area);
 
-    let current_theme = THEMES[state.theme_idx].0;
-    let current_lang = SUPPORTED_LANGUAGES[state.lang_idx];
+    let available_themes = get_available_themes(Some(&app.config.display.custom_theme));
+    let current_theme = available_themes[state.theme_idx.min(available_themes.len() - 1)].0;
+    let current_lang = SUPPORTED_LANGUAGES[state.lang_idx.min(SUPPORTED_LANGUAGES.len() - 1)];
+    let lang_badge = get_language_badge(current_lang);
 
     let theme_focused = state.focus_idx == 0;
     let lang_focused = state.focus_idx == 1;
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled("CPKB Settings & Preferences", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
         ]),
@@ -433,16 +463,29 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
             Span::styled(if theme_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
             Span::styled("Color Theme:       ", if theme_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
             Span::styled(" ◀ ", Style::default().fg(app.theme.secondary)),
-            Span::styled(format!("{:<20}", current_theme), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{:<18}", current_theme), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
             Span::styled(" ▶ ", Style::default().fg(app.theme.secondary)),
+            Span::styled("  Preview: ", Style::default().fg(app.theme.text_dim)),
+            Span::styled("●", Style::default().fg(app.theme.primary)),
+            Span::raw(" "),
+            Span::styled("●", Style::default().fg(app.theme.secondary)),
+            Span::raw(" "),
+            Span::styled("●", Style::default().fg(app.theme.accent)),
+            Span::raw(" "),
+            Span::styled("●", Style::default().fg(app.theme.success)),
+            Span::raw(" "),
+            Span::styled("●", Style::default().fg(app.theme.warning)),
+            Span::raw(" "),
+            Span::styled("●", Style::default().fg(app.theme.error)),
         ]),
         Line::from(""),
         Line::from(vec![
             Span::styled(if lang_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
             Span::styled("Default Language:  ", if lang_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
             Span::styled(" ◀ ", Style::default().fg(app.theme.secondary)),
-            Span::styled(format!("{:<20}", current_lang), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{:<18}", current_lang), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
             Span::styled(" ▶ ", Style::default().fg(app.theme.secondary)),
+            Span::styled(format!(" {} {} ", lang_badge.icon, lang_badge.name), Style::default().bg(lang_badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -453,20 +496,29 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
             Span::styled("Database Storage:  ", Style::default().fg(app.theme.text_dim)),
             Span::styled(app.app_dir.join("snippets.db").display().to_string(), Style::default().fg(app.theme.text)),
         ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled(" [← / →] ", Style::default().bg(app.theme.surface).fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
-            Span::raw(" Value  "),
-            Span::styled(" [Tab] ", Style::default().bg(app.theme.surface).fg(app.theme.primary).add_modifier(Modifier::BOLD)),
-            Span::raw(" Row  "),
-            Span::styled(" [Ctrl+e / E] ", Style::default().bg(app.theme.primary).fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::raw(" Edit config.json in $EDITOR  "),
-            Span::styled(" [Enter] ", Style::default().bg(app.theme.success).fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::raw(" Save  "),
-            Span::styled(" [Esc] ", Style::default().bg(app.theme.surface).fg(app.theme.text).add_modifier(Modifier::BOLD)),
-            Span::raw(" Cancel"),
-        ]),
     ];
+
+    if current_theme == "Custom" {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(" [Custom Theme Active] ", Style::default().bg(app.theme.accent).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(" Colors loaded from config.json -> display.custom_theme", Style::default().fg(app.theme.text_dim)),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled(" [← / →] ", Style::default().bg(app.theme.surface).fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+        Span::raw(" Value  "),
+        Span::styled(" [Tab] ", Style::default().bg(app.theme.surface).fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+        Span::raw(" Row  "),
+        Span::styled(" [Ctrl+e / E] ", Style::default().bg(app.theme.primary).fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::raw(" Edit in $EDITOR  "),
+        Span::styled(" [Enter] ", Style::default().bg(app.theme.success).fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::raw(" Save  "),
+        Span::styled(" [Esc] ", Style::default().bg(app.theme.surface).fg(app.theme.text).add_modifier(Modifier::BOLD)),
+        Span::raw(" Cancel"),
+    ]));
 
     let p = Paragraph::new(lines)
         .block(

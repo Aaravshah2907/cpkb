@@ -76,10 +76,70 @@ pub fn get_language_badge(lang: &str) -> LanguageBadge {
             icon: "󰆼",
             color: Color::Rgb(227, 140, 45), // Orange
         },
+        "html" | "htm" => LanguageBadge {
+            name: "HTML",
+            icon: "",
+            color: Color::Rgb(227, 79, 38), // HTML Orange
+        },
+        "css" | "scss" | "sass" | "less" => LanguageBadge {
+            name: "CSS",
+            icon: "",
+            color: Color::Rgb(21, 114, 182), // CSS Blue
+        },
+        "json" => LanguageBadge {
+            name: "JSON",
+            icon: "",
+            color: Color::Rgb(203, 203, 65), // JSON Yellow
+        },
+        "yaml" | "yml" => LanguageBadge {
+            name: "YAML",
+            icon: "",
+            color: Color::Rgb(203, 23, 30), // YAML Red
+        },
+        "toml" => LanguageBadge {
+            name: "TOML",
+            icon: "",
+            color: Color::Rgb(156, 65, 33), // TOML Brown
+        },
+        "kotlin" | "kt" | "kts" => LanguageBadge {
+            name: "Kotlin",
+            icon: "",
+            color: Color::Rgb(127, 82, 255), // Kotlin Purple
+        },
+        "swift" => LanguageBadge {
+            name: "Swift",
+            icon: "",
+            color: Color::Rgb(250, 115, 67), // Swift Orange
+        },
+        "ruby" | "rb" => LanguageBadge {
+            name: "Ruby",
+            icon: "",
+            color: Color::Rgb(204, 52, 45), // Ruby Red
+        },
+        "php" => LanguageBadge {
+            name: "PHP",
+            icon: "",
+            color: Color::Rgb(119, 123, 180), // PHP Blue/Violet
+        },
+        "haskell" | "hs" => LanguageBadge {
+            name: "Haskell",
+            icon: "",
+            color: Color::Rgb(94, 80, 134), // Haskell Violet
+        },
+        "zig" => LanguageBadge {
+            name: "Zig",
+            icon: "",
+            color: Color::Rgb(247, 164, 29), // Zig Gold
+        },
+        "dart" => LanguageBadge {
+            name: "Dart",
+            icon: "",
+            color: Color::Rgb(1, 117, 194), // Dart Cyan
+        },
         _ => LanguageBadge {
             name: "Text",
             icon: "󰉿",
-            color: Color::Rgb(140, 140, 140), // Gray
+            color: Color::Rgb(148, 163, 184), // Slate Gray
         },
     }
 }
@@ -95,6 +155,9 @@ mod tests {
         assert_eq!(get_language_badge("rust").name, "Rust");
         assert_eq!(get_language_badge("tex").name, "LaTeX");
         assert_eq!(get_language_badge("latex").name, "LaTeX");
+        assert_eq!(get_language_badge("html").name, "HTML");
+        assert_eq!(get_language_badge("zig").name, "Zig");
+        assert_eq!(get_language_badge("kotlin").name, "Kotlin");
         assert_eq!(get_language_badge("unknown_lang").name, "Text");
     }
 }

@@ -26,6 +26,7 @@ pub struct SnippetSummary {
     pub id: String,
     pub title: String,
     pub tags: String,
+    pub language: String,
 }
 
 pub fn now_iso() -> String {
@@ -288,12 +289,13 @@ pub fn delete_snippet(conn: &Connection, snippet_id: &str) -> Result<bool> {
 
 /// List all snippets sorted by creation date descending.
 pub fn list_snippets(conn: &Connection) -> Result<Vec<SnippetSummary>> {
-    let mut stmt = conn.prepare("SELECT id, title, tags FROM snippets ORDER BY created_at DESC")?;
+    let mut stmt = conn.prepare("SELECT id, title, tags, language FROM snippets ORDER BY created_at DESC")?;
     let rows = stmt.query_map([], |row| {
         Ok(SnippetSummary {
             id: row.get(0)?,
             title: row.get(1)?,
             tags: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            language: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
         })
     })?;
 
@@ -307,13 +309,14 @@ pub fn list_snippets(conn: &Connection) -> Result<Vec<SnippetSummary>> {
 /// List the most recent snippets.
 pub fn recent_snippets(conn: &Connection, limit: u32) -> Result<Vec<SnippetSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, tags FROM snippets ORDER BY created_at DESC LIMIT ?1",
+        "SELECT id, title, tags, language FROM snippets ORDER BY created_at DESC LIMIT ?1",
     )?;
     let rows = stmt.query_map(params![limit], |row| {
         Ok(SnippetSummary {
             id: row.get(0)?,
             title: row.get(1)?,
             tags: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            language: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
         })
     })?;
 

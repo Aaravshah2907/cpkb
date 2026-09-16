@@ -21,7 +21,7 @@ use rusqlite::Connection;
 use crate::cli::editor::{open_snippet_creator, open_snippet_editor};
 use crate::db::snippets::{add_snippet, update_snippet};
 use crate::tui::app::{ActiveModal, App, SUPPORTED_LANGUAGES};
-use crate::tui::theme::THEMES;
+use crate::tui::theme::get_available_themes;
 use crate::tui::ui::render_ui;
 
 /// Start and run the CPKB TUI application loop.
@@ -124,13 +124,14 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
+                        let available_themes = get_available_themes(Some(&app.config.display.custom_theme));
                         if state.focus_idx == 0 {
                             state.theme_idx = if state.theme_idx == 0 {
-                                THEMES.len() - 1
+                                available_themes.len() - 1
                             } else {
                                 state.theme_idx - 1
                             };
-                            app.theme = THEMES[state.theme_idx].1.clone(); // Live theme preview
+                            app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
                         } else {
                             state.lang_idx = if state.lang_idx == 0 {
                                 SUPPORTED_LANGUAGES.len() - 1
@@ -141,9 +142,10 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
+                        let available_themes = get_available_themes(Some(&app.config.display.custom_theme));
                         if state.focus_idx == 0 {
-                            state.theme_idx = (state.theme_idx + 1) % THEMES.len();
-                            app.theme = THEMES[state.theme_idx].1.clone(); // Live theme preview
+                            state.theme_idx = (state.theme_idx + 1) % available_themes.len();
+                            app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
                         } else {
                             state.lang_idx = (state.lang_idx + 1) % SUPPORTED_LANGUAGES.len();
                         }

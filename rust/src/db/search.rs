@@ -10,7 +10,7 @@ pub fn search_snippets(conn: &Connection, query: &str) -> Result<Vec<SnippetSumm
         return crate::db::snippets::list_snippets(conn);
     }
 
-    let mut sql = "SELECT id, title, tags FROM snippets WHERE ".to_string();
+    let mut sql = "SELECT id, title, tags, language FROM snippets WHERE ".to_string();
     let mut clauses = Vec::new();
     for i in 1..=words.len() {
         clauses.push(format!(
@@ -29,6 +29,7 @@ pub fn search_snippets(conn: &Connection, query: &str) -> Result<Vec<SnippetSumm
             id: row.get(0)?,
             title: row.get(1)?,
             tags: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            language: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
         })
     })?;
 

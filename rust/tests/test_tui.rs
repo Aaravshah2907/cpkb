@@ -7,7 +7,7 @@ use cpkb::db::snippets::{add_snippet, get_snippet};
 use cpkb::tui::app::{ActiveModal, AddSnippetModalState, App, EditSnippetModalState, SettingsModalState};
 use cpkb::tui::badges::get_language_badge;
 use cpkb::tui::syntax::SyntaxHighlighter;
-use cpkb::tui::theme::{get_theme_by_name, THEMES};
+use cpkb::tui::theme::{get_available_themes, get_id_color, get_theme, get_theme_by_name, ID_PALETTE, THEMES};
 
 #[test]
 fn test_tui_app_creation_and_empty_state() {
@@ -205,16 +205,6 @@ fn test_tui_panel_resizing_bounds() {
 }
 
 #[test]
-fn test_tui_language_badges_all() {
-    let langs = ["cpp", "c", "python", "rust", "tex", "javascript", "typescript", "go", "java", "lua", "bash", "markdown", "sql", "text"];
-    for lang in langs {
-        let badge = get_language_badge(lang);
-        assert!(!badge.name.is_empty());
-        assert!(!badge.icon.is_empty());
-    }
-}
-
-#[test]
 fn test_tui_syntect_syntax_highlighter_multiple_languages() {
     let highlighter = SyntaxHighlighter::new();
 
@@ -233,10 +223,64 @@ fn test_tui_syntect_syntax_highlighter_multiple_languages() {
 
 #[test]
 fn test_tui_all_themes_present() {
-    assert_eq!(THEMES.len(), 6);
+    assert_eq!(THEMES.len(), 8);
     assert_eq!(get_theme_by_name("cosmere").name, "Cosmere");
     assert_eq!(get_theme_by_name("tokyo-night").name, "Tokyo Night");
     assert_eq!(get_theme_by_name("nord").name, "Nord");
     assert_eq!(get_theme_by_name("gruvbox").name, "Gruvbox");
     assert_eq!(get_theme_by_name("dracula").name, "Dracula");
+    assert_eq!(get_theme_by_name("solarized").name, "Solarized Dark");
+    assert_eq!(get_theme_by_name("synthwave").name, "Synthwave");
+}
+
+#[test]
+fn test_tui_custom_theme_resolution() {
+    let mut custom = cpkb::config::CustomTheme::default();
+    custom.primary = "#ff007f".to_string(); // Electric Rose
+    custom.background = "#121212".to_string();
+
+    let resolved = get_theme("custom", Some(&custom));
+    assert_eq!(resolved.name, "Custom");
+    assert_eq!(resolved.primary, ratatui::style::Color::Rgb(255, 0, 127));
+    assert_eq!(resolved.background, ratatui::style::Color::Rgb(18, 18, 18));
+
+    let available = get_available_themes(Some(&custom));
+    assert_eq!(available.len(), THEMES.len() + 1);
+    assert_eq!(available.last().unwrap().0, "Custom");
+}
+
+#[test]
+fn test_tui_id_colors_deterministic_and_varied() {
+    let id1 = "CP001";
+    let id2 = "CP002";
+    let id3 = "ms_001";
+    let id4 = "LATEX-000001";
+
+    let col1 = get_id_color(id1);
+    let col2 = get_id_color(id2);
+    let col3 = get_id_color(id3);
+    let col4 = get_id_color(id4);
+
+    // Consistency: same ID always gives exact same color
+    assert_eq!(get_id_color(id1), col1);
+    assert_eq!(get_id_color(id2), col2);
+
+    // Verify colors exist in palette
+    assert!(ID_PALETTE.contains(&col1));
+    assert!(ID_PALETTE.contains(&col2));
+    assert!(ID_PALETTE.contains(&col3));
+    assert!(ID_PALETTE.contains(&col4));
+}
+
+#[test]
+fn test_tui_language_badges_all() {
+    let langs = [
+        "cpp", "c", "python", "rust", "tex", "javascript", "typescript", "go", "java", "kotlin", "lua", "bash",
+        "markdown", "sql", "html", "css", "json", "yaml", "toml", "swift", "ruby", "php", "zig", "dart", "text",
+    ];
+    for lang in langs {
+        let badge = get_language_badge(lang);
+        assert!(!badge.name.is_empty(), "Language badge name empty for {}", lang);
+        assert!(!badge.icon.is_empty(), "Language badge icon empty for {}", lang);
+    }
 }

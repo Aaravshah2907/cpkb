@@ -1,6 +1,7 @@
 //! Color palettes and visual themes for CPKB TUI.
 
 use ratatui::style::{Color, Modifier, Style};
+use crate::config::CustomTheme;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Theme {
@@ -54,6 +55,43 @@ impl Theme {
         Style::default()
             .bg(self.background)
             .fg(self.text_dim)
+    }
+}
+
+/// Parse a hex code (#rrggbb or #rgb) or named CSS color into a ratatui Color.
+pub fn parse_color(s: &str) -> Option<Color> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix('#') {
+        if hex.len() == 6 {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            return Some(Color::Rgb(r, g, b));
+        } else if hex.len() == 3 {
+            let r = u8::from_str_radix(&hex[0..1], 16).ok()? * 17;
+            let g = u8::from_str_radix(&hex[1..2], 16).ok()? * 17;
+            let b = u8::from_str_radix(&hex[2..3], 16).ok()? * 17;
+            return Some(Color::Rgb(r, g, b));
+        }
+    }
+    match s.to_lowercase().as_str() {
+        "black" => Some(Color::Black),
+        "red" => Some(Color::Red),
+        "green" => Some(Color::Green),
+        "yellow" => Some(Color::Yellow),
+        "blue" => Some(Color::Blue),
+        "magenta" | "purple" => Some(Color::Magenta),
+        "cyan" => Some(Color::Cyan),
+        "gray" | "grey" => Some(Color::Gray),
+        "darkgray" | "darkgrey" | "dark_gray" => Some(Color::DarkGray),
+        "lightred" | "light_red" => Some(Color::LightRed),
+        "lightgreen" | "light_green" => Some(Color::LightGreen),
+        "lightyellow" | "light_yellow" => Some(Color::LightYellow),
+        "lightblue" | "light_blue" => Some(Color::LightBlue),
+        "lightmagenta" | "light_magenta" => Some(Color::LightMagenta),
+        "lightcyan" | "light_cyan" => Some(Color::LightCyan),
+        "white" => Some(Color::White),
+        _ => None,
     }
 }
 
@@ -153,6 +191,69 @@ pub const THEME_GRUVBOX: Theme = Theme {
     error: Color::Rgb(251, 73, 52),
 };
 
+pub const THEME_SOLARIZED_DARK: Theme = Theme {
+    name: "Solarized Dark",
+    background: Color::Rgb(0, 43, 54),
+    surface: Color::Rgb(7, 54, 66),
+    border: Color::Rgb(88, 110, 117),
+    border_focused: Color::Rgb(38, 139, 210),
+    primary: Color::Rgb(38, 139, 210),      // Blue
+    secondary: Color::Rgb(181, 137, 0),     // Yellow
+    accent: Color::Rgb(211, 54, 130),       // Magenta
+    text: Color::Rgb(131, 148, 150),
+    text_dim: Color::Rgb(88, 110, 117),
+    success: Color::Rgb(133, 153, 0),       // Green
+    warning: Color::Rgb(203, 75, 22),       // Orange
+    error: Color::Rgb(220, 50, 47),         // Red
+};
+
+pub const THEME_SYNTHWAVE: Theme = Theme {
+    name: "Synthwave",
+    background: Color::Rgb(36, 20, 51),
+    surface: Color::Rgb(49, 27, 70),
+    border: Color::Rgb(80, 44, 115),
+    border_focused: Color::Rgb(255, 126, 219), // Neon Pink
+    primary: Color::Rgb(255, 126, 219),
+    secondary: Color::Rgb(54, 241, 205),       // Neon Cyan
+    accent: Color::Rgb(254, 222, 93),          // Neon Yellow
+    text: Color::Rgb(255, 255, 255),
+    text_dim: Color::Rgb(160, 140, 180),
+    success: Color::Rgb(54, 241, 205),
+    warning: Color::Rgb(254, 222, 93),
+    error: Color::Rgb(254, 68, 80),
+};
+
+pub fn from_custom(custom: &CustomTheme) -> Theme {
+    let background = parse_color(&custom.background).unwrap_or(Color::Rgb(30, 30, 30));
+    let surface = parse_color(&custom.surface).unwrap_or(Color::Rgb(45, 45, 48));
+    let primary = parse_color(&custom.primary).unwrap_or(Color::Rgb(0, 255, 255));
+    let secondary = parse_color(&custom.secondary).unwrap_or(Color::Rgb(51, 153, 255));
+    let accent = parse_color(&custom.accent).unwrap_or(Color::Rgb(0, 255, 255));
+    let text = parse_color(&custom.foreground).unwrap_or(Color::Rgb(255, 255, 255));
+    let warning = parse_color(&custom.warning).unwrap_or(Color::Rgb(250, 189, 47));
+    let error = parse_color(&custom.error).unwrap_or(Color::Rgb(255, 85, 85));
+    let success = parse_color(&custom.success).unwrap_or(Color::Rgb(78, 191, 113));
+    let border = parse_color(&custom.panel).unwrap_or(Color::Rgb(70, 70, 75));
+    let border_focused = primary;
+    let text_dim = parse_color(&custom.boost).unwrap_or(Color::Rgb(150, 150, 150));
+
+    Theme {
+        name: "Custom",
+        background,
+        surface,
+        border,
+        border_focused,
+        primary,
+        secondary,
+        accent,
+        text,
+        text_dim,
+        success,
+        warning,
+        error,
+    }
+}
+
 pub const THEMES: &[(&str, Theme)] = &[
     ("Cosmere", THEME_COSMERE),
     ("Catppuccin Mocha", THEME_CATPPUCCIN),
@@ -160,17 +261,74 @@ pub const THEMES: &[(&str, Theme)] = &[
     ("Nord", THEME_NORD),
     ("Gruvbox", THEME_GRUVBOX),
     ("Dracula", THEME_DRACULA),
+    ("Solarized Dark", THEME_SOLARIZED_DARK),
+    ("Synthwave", THEME_SYNTHWAVE),
 ];
 
+pub fn get_available_themes(custom: Option<&CustomTheme>) -> Vec<(&'static str, Theme)> {
+    let mut list = Vec::with_capacity(THEMES.len() + 1);
+    for &(name, ref t) in THEMES {
+        list.push((name, t.clone()));
+    }
+    if let Some(c) = custom {
+        list.push(("Custom", from_custom(c)));
+    } else {
+        list.push(("Custom", from_custom(&CustomTheme::default())));
+    }
+    list
+}
+
 pub fn get_theme_by_name(name: &str) -> Theme {
+    get_theme(name, None)
+}
+
+pub fn get_theme(name: &str, custom: Option<&CustomTheme>) -> Theme {
     match name.to_lowercase().trim() {
+        "custom" => {
+            if let Some(c) = custom {
+                from_custom(c)
+            } else {
+                from_custom(&CustomTheme::default())
+            }
+        }
         "catppuccin" | "mocha" | "catppuccin-mocha" => THEME_CATPPUCCIN,
         "tokyo-night" | "tokyonight" => THEME_TOKYO_NIGHT,
         "nord" => THEME_NORD,
         "gruvbox" => THEME_GRUVBOX,
         "dracula" => THEME_DRACULA,
+        "solarized" | "solarized-dark" => THEME_SOLARIZED_DARK,
+        "synthwave" | "cyberpunk" => THEME_SYNTHWAVE,
         _ => THEME_COSMERE,
     }
+}
+
+/// Deterministic, high-contrast, beautiful palette for snippet IDs across all terminal themes.
+pub const ID_PALETTE: &[Color] = &[
+    Color::Rgb(56, 189, 248),  // Sky Blue
+    Color::Rgb(52, 211, 153),  // Emerald Green
+    Color::Rgb(251, 191, 36),  // Amber Gold
+    Color::Rgb(192, 132, 252), // Violet Purple
+    Color::Rgb(251, 113, 133), // Rose Coral
+    Color::Rgb(251, 146, 60),  // Vivid Orange
+    Color::Rgb(45, 212, 191),  // Teal Mint
+    Color::Rgb(129, 140, 248), // Indigo Blue
+    Color::Rgb(232, 121, 249), // Fuchsia Pink
+    Color::Rgb(163, 230, 53),  // Lime Green
+    Color::Rgb(94, 234, 212),  // Aquamarine
+    Color::Rgb(252, 165, 165), // Soft Peach
+];
+
+/// Return a deterministic distinct color for any snippet ID.
+pub fn get_id_color(id: &str) -> Color {
+    if id.is_empty() {
+        return ID_PALETTE[0];
+    }
+    // Deterministic djb2-like polynomial hash for uniform color distribution
+    let hash = id.bytes().fold(5381u32, |acc, b| {
+        acc.wrapping_mul(33).wrapping_add(b as u32)
+    });
+    let idx = (hash as usize) % ID_PALETTE.len();
+    ID_PALETTE[idx]
 }
 
 #[cfg(test)]
@@ -182,6 +340,9 @@ mod tests {
         assert_eq!(get_theme_by_name("catppuccin").name, "Catppuccin Mocha");
         assert_eq!(get_theme_by_name("dracula").name, "Dracula");
         assert_eq!(get_theme_by_name("cosmere").name, "Cosmere");
+        assert_eq!(get_theme_by_name("solarized").name, "Solarized Dark");
+        assert_eq!(get_theme_by_name("synthwave").name, "Synthwave");
+        assert_eq!(get_theme_by_name("custom").name, "Custom");
         assert_eq!(get_theme_by_name("default").name, "Cosmere");
     }
 
@@ -191,4 +352,28 @@ mod tests {
         assert_eq!(theme.style_base().bg, Some(theme.background));
         assert_eq!(theme.style_surface().bg, Some(theme.surface));
     }
+
+    #[test]
+    fn test_parse_color() {
+        assert_eq!(parse_color("#ff0000"), Some(Color::Rgb(255, 0, 0)));
+        assert_eq!(parse_color("#00ff00"), Some(Color::Rgb(0, 255, 0)));
+        assert_eq!(parse_color("#f00"), Some(Color::Rgb(255, 0, 0)));
+        assert_eq!(parse_color("cyan"), Some(Color::Cyan));
+        assert_eq!(parse_color("invalid_color"), None);
+    }
+
+    #[test]
+    fn test_id_colors_deterministic() {
+        let color1 = get_id_color("CP001");
+        let color1_again = get_id_color("CP001");
+        assert_eq!(color1, color1_again);
+
+        let color2 = get_id_color("CP002");
+        let color3 = get_id_color("ms_001");
+        // Ensure they hash to valid palette colors
+        assert!(ID_PALETTE.contains(&color1));
+        assert!(ID_PALETTE.contains(&color2));
+        assert!(ID_PALETTE.contains(&color3));
+    }
 }
+

@@ -11,7 +11,7 @@ use crate::clipboard::copy_to_clipboard;
 use crate::config::{load_config, save_config, Config};
 use crate::db::snippets::{add_snippet, delete_snippet, get_snippet, list_snippets, update_snippet, Snippet, SnippetSummary};
 use crate::tui::syntax::SyntaxHighlighter;
-use crate::tui::theme::{get_theme_by_name, Theme, THEMES};
+use crate::tui::theme::{get_available_themes, get_theme, Theme};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddSnippetModalState {
@@ -44,7 +44,8 @@ pub struct SettingsModalState {
 }
 
 pub const SUPPORTED_LANGUAGES: &[&str] = &[
-    "cpp", "c", "python", "rust", "tex", "javascript", "typescript", "go", "java", "lua", "bash", "markdown", "sql", "text",
+    "cpp", "c", "python", "rust", "tex", "javascript", "typescript", "go", "java", "kotlin", "lua", "bash",
+    "markdown", "sql", "html", "css", "json", "yaml", "toml", "swift", "ruby", "php", "zig", "text",
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,7 +79,7 @@ pub struct App {
 impl App {
     pub fn new(conn: &Connection, app_dir: &Path) -> Self {
         let config = load_config(app_dir);
-        let theme = get_theme_by_name(&config.display.theme);
+        let theme = get_theme(&config.display.theme, Some(&config.display.custom_theme));
         let all_snippets = list_snippets(conn).unwrap_or_default();
         let filtered_indices: Vec<usize> = (0..all_snippets.len()).collect();
 
@@ -247,8 +248,9 @@ impl App {
     }
 
     pub fn open_settings_modal(&mut self) {
+        let available_themes = get_available_themes(Some(&self.config.display.custom_theme));
         let current_theme_name = self.theme.name;
-        let theme_idx = THEMES.iter().position(|(name, _)| *name == current_theme_name).unwrap_or(0);
+        let theme_idx = available_themes.iter().position(|(name, _)| *name == current_theme_name).unwrap_or(0);
 
         let current_lang = self.config.default_language.to_lowercase();
         let lang_idx = SUPPORTED_LANGUAGES.iter().position(|l| *l == current_lang).unwrap_or(0);
@@ -341,8 +343,9 @@ impl App {
     }
 
     pub fn save_settings(&mut self, state: SettingsModalState) {
-        let (theme_name, theme) = &THEMES[state.theme_idx];
-        let lang = SUPPORTED_LANGUAGES[state.lang_idx];
+        let available_themes = get_available_themes(Some(&self.config.display.custom_theme));
+        let (theme_name, theme) = &available_themes[state.theme_idx.min(available_themes.len() - 1)];
+        let lang = SUPPORTED_LANGUAGES[state.lang_idx.min(SUPPORTED_LANGUAGES.len() - 1)];
 
         self.theme = theme.clone();
         self.config.display.theme = theme_name.to_lowercase().replace(' ', "-");
