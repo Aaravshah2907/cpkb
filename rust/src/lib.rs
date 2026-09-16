@@ -5,4 +5,5 @@ pub mod db;
 pub mod cli;
 pub mod clipboard;
 pub mod export;
+pub mod tui;
 

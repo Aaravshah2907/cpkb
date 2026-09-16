@@ -11,11 +11,14 @@ use rusqlite::Connection;
 #[command(name = "cpkb", version, about = "Competitive Programming Knowledge Base", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Launch interactive Terminal User Interface (TUI)
+    Tui,
+
     /// Add a new snippet with interactive prompts or options
     Add {
         /// Programming language for the snippet (e.g. cpp, python, rust, tex, md)
@@ -210,7 +213,9 @@ pub enum IdFormatCommands {
 
 /// Execute CLI subcommand against active database and application directory.
 pub fn run_cli(cli: Cli, conn: &mut Connection, app_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    match cli.command {
+    let cmd = cli.command.unwrap_or(Commands::Tui);
+    match cmd {
+        Commands::Tui => crate::tui::run_tui(conn, app_dir),
         Commands::List => commands::cmd_list(conn),
         Commands::Recent { limit } => commands::cmd_recent(conn, limit),
         Commands::Search { query } => commands::cmd_search(conn, &query),
