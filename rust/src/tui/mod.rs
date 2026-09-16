@@ -116,11 +116,11 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                        state.focus_idx = (state.focus_idx + 1) % 2;
+                        state.focus_idx = (state.focus_idx + 1) % 3;
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
-                        state.focus_idx = if state.focus_idx == 0 { 1 } else { 0 };
+                        state.focus_idx = if state.focus_idx == 0 { 2 } else { state.focus_idx - 1 };
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
@@ -132,11 +132,17 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                                 state.theme_idx - 1
                             };
                             app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
-                        } else {
+                        } else if state.focus_idx == 1 {
                             state.lang_idx = if state.lang_idx == 0 {
                                 SUPPORTED_LANGUAGES.len() - 1
                             } else {
                                 state.lang_idx - 1
+                            };
+                        } else {
+                            state.sort_idx = if state.sort_idx == 0 {
+                                2
+                            } else {
+                                state.sort_idx - 1
                             };
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
@@ -146,8 +152,10 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         if state.focus_idx == 0 {
                             state.theme_idx = (state.theme_idx + 1) % available_themes.len();
                             app.theme = available_themes[state.theme_idx].1.clone(); // Live theme preview
-                        } else {
+                        } else if state.focus_idx == 1 {
                             state.lang_idx = (state.lang_idx + 1) % SUPPORTED_LANGUAGES.len();
+                        } else {
+                            state.sort_idx = (state.sort_idx + 1) % 3;
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
@@ -321,6 +329,9 @@ fn handle_key_event<B: ratatui::backend::Backend>(
         }
         KeyCode::Char('s') | KeyCode::Char(',') => {
             app.open_settings_modal();
+        }
+        KeyCode::Char('o') | KeyCode::Char('O') => {
+            app.toggle_sort(conn);
         }
         KeyCode::Char('c') => {
             app.copy_current_code();

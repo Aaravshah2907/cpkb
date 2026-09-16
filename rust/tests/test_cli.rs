@@ -43,6 +43,7 @@ fn test_cli_id_format_management() {
             prefix: None,
             width: None,
             pattern: Some("TEST-####".to_string()),
+            color: None,
         },
     );
     cpkb::config::save_config(dir.path(), &config).unwrap();

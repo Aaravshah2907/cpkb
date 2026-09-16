@@ -150,10 +150,11 @@ fn test_tui_settings_modal_flow() {
     app.open_settings_modal();
     assert!(matches!(app.active_modal, Some(ActiveModal::Settings(_))));
 
-    // Select Catppuccin Mocha (index 1) and Python (index 2)
+    // Select Catppuccin Mocha (index 2) and Python (index 2) and Snippet ID (index 1)
     let settings_state = SettingsModalState {
-        theme_idx: 1, // Catppuccin Mocha
+        theme_idx: 2, // Catppuccin Mocha
         lang_idx: 2,  // python
+        sort_idx: 1,  // snippet id
         focus_idx: 0,
     };
 
@@ -161,12 +162,15 @@ fn test_tui_settings_modal_flow() {
     assert!(app.active_modal.is_none());
     assert_eq!(app.theme.name, "Catppuccin Mocha");
     assert_eq!(app.config.default_language, "python");
+    assert_eq!(app.sort_order, cpkb::tui::app::SortOrder::Id);
 
     // Verify persisted config on disk
     let saved_cfg = load_config(dir.path());
     assert_eq!(saved_cfg.display.theme, "catppuccin-mocha");
     assert_eq!(saved_cfg.default_language, "python");
+    assert_eq!(saved_cfg.display.sort_by, "id");
 }
+
 
 #[test]
 fn test_tui_delete_modal_flow() {
@@ -223,8 +227,9 @@ fn test_tui_syntect_syntax_highlighter_multiple_languages() {
 
 #[test]
 fn test_tui_all_themes_present() {
-    assert_eq!(THEMES.len(), 8);
+    assert_eq!(THEMES.len(), 9);
     assert_eq!(get_theme_by_name("cosmere").name, "Cosmere");
+    assert_eq!(get_theme_by_name("scadrial").name, "Scadrial");
     assert_eq!(get_theme_by_name("tokyo-night").name, "Tokyo Night");
     assert_eq!(get_theme_by_name("nord").name, "Nord");
     assert_eq!(get_theme_by_name("gruvbox").name, "Gruvbox");
@@ -232,6 +237,7 @@ fn test_tui_all_themes_present() {
     assert_eq!(get_theme_by_name("solarized").name, "Solarized Dark");
     assert_eq!(get_theme_by_name("synthwave").name, "Synthwave");
 }
+
 
 #[test]
 fn test_tui_custom_theme_resolution() {

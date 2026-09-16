@@ -33,7 +33,12 @@ pub enum Commands {
     },
 
     /// List all snippets in the knowledge base
-    List,
+    List {
+        /// Sort snippets by field: id, name, or date
+        #[arg(short, long, default_value = "date")]
+        sort: String,
+    },
+
 
     /// Show snippet details, metadata, and code
     Show {
@@ -228,8 +233,9 @@ pub fn run_cli(cli: Cli, conn: &mut Connection, app_dir: &Path) -> Result<(), Bo
     let cmd = cli.command.unwrap_or(Commands::Tui);
     match cmd {
         Commands::Tui => crate::tui::run_tui(conn, app_dir),
-        Commands::List => commands::cmd_list(conn),
+        Commands::List { sort } => commands::cmd_list(conn, &sort),
         Commands::Recent { limit } => commands::cmd_recent(conn, limit),
+
         Commands::Search { query } => commands::cmd_search(conn, &query),
         Commands::Query { query, limit } => commands::cmd_query(conn, &query, limit),
         Commands::Show { id, json } => commands::cmd_show(conn, &id, json),

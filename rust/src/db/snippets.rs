@@ -287,9 +287,36 @@ pub fn delete_snippet(conn: &Connection, snippet_id: &str) -> Result<bool> {
     Ok(rows > 0)
 }
 
-/// List all snippets sorted by creation date descending.
-pub fn list_snippets(conn: &Connection) -> Result<Vec<SnippetSummary>> {
-    let mut stmt = conn.prepare("SELECT id, title, tags, language FROM snippets ORDER BY created_at DESC")?;
+/// Sort order field options for listing snippets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnippetSortField {
+    Id,
+    Name,
+    Date,
+}
+
+impl std::str::FromStr for SnippetSortField {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().trim() {
+            "id" => Ok(SnippetSortField::Id),
+            "name" | "title" => Ok(SnippetSortField::Name),
+            "date" | "recent" => Ok(SnippetSortField::Date),
+            other => Err(format!("Unknown sort field: '{other}'. Choose from: id, name, date")),
+        }
+    }
+}
+
+/// List all snippets with configurable sort order.
+pub fn list_snippets_sorted(conn: &Connection, sort_field: SnippetSortField) -> Result<Vec<SnippetSummary>> {
+    let order_sql = match sort_field {
+        SnippetSortField::Id => "ORDER BY id ASC",
+        SnippetSortField::Name => "ORDER BY title COLLATE NOCASE ASC",
+        SnippetSortField::Date => "ORDER BY created_at DESC, id DESC",
+    };
+    let sql = format!("SELECT id, title, tags, language FROM snippets {}", order_sql);
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |row| {
         Ok(SnippetSummary {
             id: row.get(0)?,
@@ -304,6 +331,11 @@ pub fn list_snippets(conn: &Connection) -> Result<Vec<SnippetSummary>> {
         result.push(r?);
     }
     Ok(result)
+}
+
+/// List all snippets sorted by creation date descending.
+pub fn list_snippets(conn: &Connection) -> Result<Vec<SnippetSummary>> {
+    list_snippets_sorted(conn, SnippetSortField::Date)
 }
 
 /// List the most recent snippets.
@@ -409,4 +441,49 @@ pub struct FullSnippetExport {
     pub created_at:  Option<String>,
     pub updated_at:  Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::get_in_memory_conn;
+
+    #[test]
+    fn test_list_snippets_sorted_by_id_and_name() {
+        let mut conn = get_in_memory_conn().unwrap();
+        insert_snippet_with_id(&mut conn, "CP0002", "Zebra Algorithm", "", "", "", "", "cpp", Some("2026-01-01T00:00:00Z"), None).unwrap();
+        insert_snippet_with_id(&mut conn, "CP0001", "Apple Search", "", "", "", "", "rust", Some("2026-01-02T00:00:00Z"), None).unwrap();
+        insert_snippet_with_id(&mut conn, "CP0003", "Banana Sort", "", "", "", "", "python", Some("2026-01-03T00:00:00Z"), None).unwrap();
+
+        // Sort by ID
+        let by_id = list_snippets_sorted(&conn, SnippetSortField::Id).unwrap();
+        assert_eq!(by_id[0].id, "CP0001");
+        assert_eq!(by_id[1].id, "CP0002");
+        assert_eq!(by_id[2].id, "CP0003");
+
+        // Sort by Name
+        let by_name = list_snippets_sorted(&conn, SnippetSortField::Name).unwrap();
+        assert_eq!(by_name[0].title, "Apple Search");
+        assert_eq!(by_name[1].title, "Banana Sort");
+        assert_eq!(by_name[2].title, "Zebra Algorithm");
+
+        // Sort by Date (descending)
+        let by_date = list_snippets_sorted(&conn, SnippetSortField::Date).unwrap();
+        assert_eq!(by_date[0].id, "CP0003");
+        assert_eq!(by_date[1].id, "CP0001");
+        assert_eq!(by_date[2].id, "CP0002");
+    }
+
+    #[test]
+    fn test_snippet_sort_field_from_str() {
+        use std::str::FromStr;
+        assert_eq!(SnippetSortField::from_str("id").unwrap(), SnippetSortField::Id);
+        assert_eq!(SnippetSortField::from_str("ID").unwrap(), SnippetSortField::Id);
+        assert_eq!(SnippetSortField::from_str("name").unwrap(), SnippetSortField::Name);
+        assert_eq!(SnippetSortField::from_str("title").unwrap(), SnippetSortField::Name);
+        assert_eq!(SnippetSortField::from_str("date").unwrap(), SnippetSortField::Date);
+        assert_eq!(SnippetSortField::from_str("recent").unwrap(), SnippetSortField::Date);
+        assert!(SnippetSortField::from_str("invalid").is_err());
+    }
+}
+
 

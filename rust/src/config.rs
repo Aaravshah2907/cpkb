@@ -42,6 +42,10 @@ impl Default for CustomTheme {
     }
 }
 
+fn default_sort_by() -> String {
+    "date".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DisplayConfig {
     pub theme: String,
@@ -49,6 +53,8 @@ pub struct DisplayConfig {
     pub left_pane_width: u32,
     pub layout: String,
     pub border_style: String,
+    #[serde(default = "default_sort_by")]
+    pub sort_by: String,
     pub custom_theme: CustomTheme,
 }
 
@@ -60,6 +66,7 @@ impl Default for DisplayConfig {
             left_pane_width: 35,
             layout: "horizontal".to_string(),
             border_style: "solid".to_string(),
+            sort_by: "date".to_string(),
             custom_theme: CustomTheme::default(),
         }
     }
@@ -86,6 +93,8 @@ pub struct IdFormatConfig {
     pub width: Option<serde_json::Value>, // "auto" or integer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pattern: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -106,6 +115,7 @@ impl Default for SnippetsConfig {
                 prefix: Some("CP".to_string()),
                 width: Some(serde_json::Value::String("auto".to_string())),
                 pattern: None,
+                color: None,
             },
         );
         id_formats.insert(
@@ -114,6 +124,7 @@ impl Default for SnippetsConfig {
                 prefix: Some("ms_".to_string()),
                 width: Some(serde_json::Value::String("auto".to_string())),
                 pattern: None,
+                color: None,
             },
         );
         id_formats.insert(
@@ -122,6 +133,7 @@ impl Default for SnippetsConfig {
                 prefix: None,
                 width: None,
                 pattern: Some("LATEX-######".to_string()),
+                color: None,
             },
         );
 

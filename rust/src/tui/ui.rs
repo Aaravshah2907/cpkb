@@ -12,7 +12,30 @@ use crate::tui::app::{
     ActiveModal, AddSnippetModalState, App, EditSnippetModalState, SettingsModalState, SUPPORTED_LANGUAGES,
 };
 use crate::tui::badges::get_language_badge;
-use crate::tui::theme::{get_available_themes, get_id_color};
+use crate::tui::theme::{get_available_themes, parse_color, resolve_id_color};
+
+/// Convert a config `border_style` string to a ratatui `BorderType`.
+fn border_type_from_config(style: &str) -> BorderType {
+    match style.to_lowercase().trim() {
+        "solid" | "plain" => BorderType::Plain,
+        "heavy" | "thick" => BorderType::Thick,
+        "double" => BorderType::Double,
+        "dash" | "dashed" => BorderType::Rounded, // closest available fallback
+        _ => BorderType::Rounded,
+    }
+}
+
+/// Resolve the effective primary color, allowing `accent_color` from config to override the theme primary.
+fn effective_primary(app: &App) -> ratatui::style::Color {
+    let accent = app.config.display.accent_color.trim();
+    if !accent.is_empty() && accent != "cyan" && accent != "default" {
+        if let Some(c) = parse_color(accent) {
+            return c;
+        }
+    }
+    app.theme.primary
+}
+
 
 pub fn render_ui(f: &mut Frame, app: &mut App) {
     let size = f.area();
@@ -48,6 +71,9 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
 }
 
 fn render_header(f: &mut Frame, app: &App, area: Rect) {
+    let bt = border_type_from_config(&app.config.display.border_style);
+    let primary = effective_primary(app);
+
     // Aligned to exact same column widths as main body
     let header_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -59,14 +85,14 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
     // Brand Block (Left)
     let brand_lines = Line::from(vec![
-        Span::styled(" CPKB ", Style::default().bg(app.theme.primary).fg(app.theme.background).add_modifier(Modifier::BOLD)),
+        Span::styled(" CPKB ", Style::default().bg(primary).fg(app.theme.background).add_modifier(Modifier::BOLD)),
         Span::styled(" Knowledge Base ", Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
         Span::styled(format!("[{}]", app.all_snippets.len()), Style::default().fg(app.theme.secondary)),
     ]);
     let brand_p = Paragraph::new(brand_lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
+            .border_type(bt)
             .border_style(app.theme.style_border(false)),
     );
     f.render_widget(brand_p, header_chunks[0]);
@@ -74,9 +100,9 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     // Search / Filter Block (Right)
     let search_content = if app.search_active {
         Line::from(vec![
-            Span::styled(" 🔍 Search: ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled(" 🔍 Search: ", Style::default().fg(primary).add_modifier(Modifier::BOLD)),
             Span::styled(&app.search_query, Style::default().fg(app.theme.text)),
-            Span::styled("█", Style::default().fg(app.theme.primary)),
+            Span::styled("█", Style::default().fg(primary)),
         ])
     } else if !app.search_query.is_empty() {
         Line::from(vec![
@@ -87,7 +113,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     } else {
         Line::from(vec![
             Span::styled(" Press ", Style::default().fg(app.theme.text_dim)),
-            Span::styled("/", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled("/", Style::default().fg(primary).add_modifier(Modifier::BOLD)),
             Span::styled(" to search snippets... ", Style::default().fg(app.theme.text_dim)),
             Span::styled(format!("({} total)", app.all_snippets.len()), Style::default().fg(app.theme.text_dim)),
         ])
@@ -96,11 +122,12 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let search_p = Paragraph::new(search_content).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
+            .border_type(bt)
             .border_style(app.theme.style_border(app.search_active)),
     );
     f.render_widget(search_p, header_chunks[1]);
 }
+
 
 fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
     let main_chunks = Layout::default()
@@ -118,6 +145,8 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = !app.search_active && app.active_modal.is_none();
     let border_style = app.theme.style_border(is_focused);
+    let bt = border_type_from_config(&app.config.display.border_style);
+    let primary = effective_primary(app);
 
     let items: Vec<ListItem> = app
         .filtered_indices
@@ -128,11 +157,12 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
             let is_selected = disp_idx == app.selected_index;
 
             let prefix = if is_selected { "▎ " } else { "  " };
-            let id_color = get_id_color(&snip.id);
+            // Resolve per-format config color if available, else deterministic hash
+            let id_color = resolve_id_color(&snip.id, &app.config.snippets.id_formats);
             let badge = get_language_badge(&snip.language);
 
             let title_style = if is_selected {
-                Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)
+                Style::default().fg(primary).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(app.theme.text)
             };
@@ -144,7 +174,7 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
             };
 
             let line1 = Line::from(vec![
-                Span::styled(prefix, Style::default().fg(app.theme.primary)),
+                Span::styled(prefix, Style::default().fg(primary)),
                 Span::styled(format!("{:<8} ", snip.id), id_style),
                 Span::styled(format!("{} ", badge.icon), Style::default().fg(badge.color)),
                 Span::styled(&snip.title, title_style),
@@ -172,24 +202,30 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list_title = format!(" Snippets ({}) ", app.filtered_indices.len());
+    let sort_label = app.sort_order.label();
+    let list_title = format!(" Snippets ({}) [Sort: {}] ", app.filtered_indices.len(), sort_label);
     let list_widget = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(Span::styled(list_title, Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)))
+                .border_type(bt)
+                .title(Span::styled(list_title, Style::default().fg(primary).add_modifier(Modifier::BOLD)))
                 .border_style(border_style),
         )
         .highlight_style(app.theme.style_selected());
 
+
     f.render_stateful_widget(list_widget, area, &mut app.list_state);
 }
 
+
 fn render_snippet_detail(f: &mut Frame, app: &App, area: Rect) {
+    let bt = border_type_from_config(&app.config.display.border_style);
+    let primary = effective_primary(app);
+
     if let Some(ref snip) = app.active_snippet {
         let badge = get_language_badge(&snip.language);
-        let id_color = get_id_color(&snip.id);
+        let id_color = resolve_id_color(&snip.id, &app.config.snippets.id_formats);
 
         let detail_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -224,8 +260,8 @@ fn render_snippet_detail(f: &mut Frame, app: &App, area: Rect) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .title(Span::styled(" Details ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)))
+                    .border_type(bt)
+                    .title(Span::styled(" Details ", Style::default().fg(primary).add_modifier(Modifier::BOLD)))
                     .border_style(app.theme.style_border(false)),
             )
             .wrap(Wrap { trim: true });
@@ -239,7 +275,7 @@ fn render_snippet_detail(f: &mut Frame, app: &App, area: Rect) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
+                    .border_type(bt)
                     .title(Span::styled(code_title, Style::default().fg(badge.color).add_modifier(Modifier::BOLD)))
                     .border_style(app.theme.style_border(false)),
             )
@@ -252,12 +288,13 @@ fn render_snippet_detail(f: &mut Frame, app: &App, area: Rect) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
+                    .border_type(bt)
                     .border_style(app.theme.style_border(false)),
             );
         f.render_widget(empty_p, area);
     }
 }
+
 
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     if let Some(status) = app.active_status() {
@@ -278,6 +315,8 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             Span::raw(" Copy  "),
             Span::styled(" s ", Style::default().bg(app.theme.surface).fg(app.theme.accent).add_modifier(Modifier::BOLD)),
             Span::raw(" Config  "),
+            Span::styled(" o ", Style::default().bg(app.theme.surface).fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+            Span::raw(" Sort  "),
             Span::styled(" / ", Style::default().bg(app.theme.surface).fg(app.theme.primary).add_modifier(Modifier::BOLD)),
             Span::raw(" Search  "),
             Span::styled(" ? ", Style::default().bg(app.theme.surface).fg(app.theme.text_dim).add_modifier(Modifier::BOLD)),
@@ -453,6 +492,12 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
 
     let theme_focused = state.focus_idx == 0;
     let lang_focused = state.focus_idx == 1;
+    let sort_focused = state.focus_idx == 2;
+    let sort_name = match state.sort_idx {
+        1 => "Snippet ID",
+        2 => "Snippet Name",
+        _ => "Recent / Date",
+    };
 
     let mut lines = vec![
         Line::from(vec![
@@ -486,6 +531,14 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
             Span::styled(format!("{:<18}", current_lang), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
             Span::styled(" ▶ ", Style::default().fg(app.theme.secondary)),
             Span::styled(format!(" {} {} ", lang_badge.icon, lang_badge.name), Style::default().bg(lang_badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(if sort_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled("Default Sort:      ", if sort_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
+            Span::styled(" ◀ ", Style::default().fg(app.theme.secondary)),
+            Span::styled(format!("{:<18}", sort_name), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
+            Span::styled(" ▶ ", Style::default().fg(app.theme.secondary)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -544,6 +597,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![Span::styled("  k / ↑         ", Style::default().fg(app.theme.secondary)), Span::raw("Select previous snippet")]),
         Line::from(vec![Span::styled("  g / G         ", Style::default().fg(app.theme.secondary)), Span::raw("Jump to top / bottom of list")]),
         Line::from(vec![Span::styled("  /             ", Style::default().fg(app.theme.secondary)), Span::raw("Search and fuzzy filter snippets in real-time")]),
+        Line::from(vec![Span::styled("  o             ", Style::default().fg(app.theme.secondary)), Span::raw("Cycle sort order (Snippet ID, Name, Date)")]),
         Line::from(vec![Span::styled("  a             ", Style::default().fg(app.theme.success)), Span::raw("Add a new snippet (modal form / $EDITOR)")]),
         Line::from(vec![Span::styled("  e / Enter     ", Style::default().fg(app.theme.primary)), Span::raw("Edit selected snippet (modal form / $EDITOR)")]),
         Line::from(vec![Span::styled("  Ctrl+e        ", Style::default().fg(app.theme.primary)), Span::raw("Directly open selected snippet in $EDITOR")]),

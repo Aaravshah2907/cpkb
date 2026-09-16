@@ -36,11 +36,82 @@ pub struct EditSnippetModalState {
     pub focus_idx: usize, // 0..=5
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortOrder {
+    Date,
+    Id,
+    Name,
+}
+
+impl SortOrder {
+    pub fn label(&self) -> &'static str {
+        match self {
+            SortOrder::Date => "Date",
+            SortOrder::Id => "ID",
+            SortOrder::Name => "Name",
+        }
+    }
+}
+
+pub const SORT_OPTIONS: &[(&str, &str)] = &[
+    ("date", "Recent / Date"),
+    ("id", "Snippet ID"),
+    ("name", "Snippet Name"),
+];
+
+/// Compare two strings naturally, parsing numeric sequences as numbers so CP1 < CP2 < CP10.
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let mut a_chars = a.chars().peekable();
+    let mut b_chars = b.chars().peekable();
+
+    while a_chars.peek().is_some() || b_chars.peek().is_some() {
+        match (a_chars.peek(), b_chars.peek()) {
+            (Some(ac), Some(bc)) if ac.is_ascii_digit() && bc.is_ascii_digit() => {
+                let mut a_num = 0u64;
+                while let Some(&c) = a_chars.peek() {
+                    if let Some(d) = c.to_digit(10) {
+                        a_num = a_num.saturating_mul(10).saturating_add(d as u64);
+                        a_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                let mut b_num = 0u64;
+                while let Some(&c) = b_chars.peek() {
+                    if let Some(d) = c.to_digit(10) {
+                        b_num = b_num.saturating_mul(10).saturating_add(d as u64);
+                        b_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if a_num != b_num {
+                    return a_num.cmp(&b_num);
+                }
+            }
+            (Some(ac), Some(bc)) => {
+                let ac_lower = ac.to_lowercase().next().unwrap_or(*ac);
+                let bc_lower = bc.to_lowercase().next().unwrap_or(*bc);
+                if ac_lower != bc_lower {
+                    return ac_lower.cmp(&bc_lower);
+                }
+                a_chars.next();
+                b_chars.next();
+            }
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (None, None) => break,
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SettingsModalState {
     pub theme_idx: usize,
     pub lang_idx: usize,
-    pub focus_idx: usize, // 0=Theme, 1=Language
+    pub sort_idx: usize,
+    pub focus_idx: usize, // 0=Theme, 1=Language, 2=Sort
 }
 
 pub const SUPPORTED_LANGUAGES: &[&str] = &[
@@ -68,6 +139,7 @@ pub struct App {
     pub search_query: String,
     pub search_active: bool,
     pub theme: Theme,
+    pub sort_order: SortOrder,
     pub status_message: Option<(String, Instant)>,
     pub should_quit: bool,
     pub active_modal: Option<ActiveModal>,
@@ -81,32 +153,37 @@ impl App {
         let config = load_config(app_dir);
         let theme = get_theme(&config.display.theme, Some(&config.display.custom_theme));
         let all_snippets = list_snippets(conn).unwrap_or_default();
-        let filtered_indices: Vec<usize> = (0..all_snippets.len()).collect();
 
-        let mut list_state = ListState::default();
-        if !filtered_indices.is_empty() {
-            list_state.select(Some(0));
-        }
+        let sort_order = match config.display.sort_by.to_lowercase().as_str() {
+            "id" => SortOrder::Id,
+            "name" | "title" => SortOrder::Name,
+            _ => SortOrder::Date,
+        };
+
+        // Load persisted left panel width from config, clamped to a sane range
+        let left_panel_percent = (config.display.left_pane_width as u16).clamp(20, 70);
 
         let mut app = Self {
             app_dir: app_dir.to_path_buf(),
             config,
             all_snippets,
-            filtered_indices,
+            filtered_indices: Vec::new(),
             selected_index: 0,
-            list_state,
+            list_state: ListState::default(),
             active_snippet: None,
             search_query: String::new(),
             search_active: false,
             theme,
+            sort_order,
             status_message: None,
             should_quit: false,
             active_modal: None,
-            left_panel_percent: 38,
+            left_panel_percent,
             highlighter: SyntaxHighlighter::new(),
             matcher: SkimMatcherV2::default(),
         };
 
+        app.apply_filter();
         app.reload_active_snippet(conn);
         app
     }
@@ -136,10 +213,22 @@ impl App {
         self.active_snippet = get_snippet(conn, &summary.id).ok().flatten();
     }
 
-    /// Apply fuzzy / keyword search filter across snippets.
+    /// Apply fuzzy / keyword search filter and active sort order across snippets.
     pub fn apply_filter(&mut self) {
         if self.search_query.trim().is_empty() {
-            self.filtered_indices = (0..self.all_snippets.len()).collect();
+            let mut indices: Vec<usize> = (0..self.all_snippets.len()).collect();
+            match self.sort_order {
+                SortOrder::Id => {
+                    indices.sort_by(|&a, &b| natural_cmp(&self.all_snippets[a].id, &self.all_snippets[b].id));
+                }
+                SortOrder::Name => {
+                    indices.sort_by(|&a, &b| self.all_snippets[a].title.to_lowercase().cmp(&self.all_snippets[b].title.to_lowercase()));
+                }
+                SortOrder::Date => {
+                    // all_snippets is already sorted by date descending from SQLite
+                }
+            }
+            self.filtered_indices = indices;
         } else {
             let mut matches = Vec::new();
             for (idx, snip) in self.all_snippets.iter().enumerate() {
@@ -148,7 +237,13 @@ impl App {
                     matches.push((score, idx));
                 }
             }
-            matches.sort_by(|a, b| b.0.cmp(&a.0));
+            matches.sort_by(|a, b| {
+                b.0.cmp(&a.0).then_with(|| match self.sort_order {
+                    SortOrder::Id => natural_cmp(&self.all_snippets[a.1].id, &self.all_snippets[b.1].id),
+                    SortOrder::Name => self.all_snippets[a.1].title.to_lowercase().cmp(&self.all_snippets[b.1].title.to_lowercase()),
+                    SortOrder::Date => a.1.cmp(&b.1),
+                })
+            });
             self.filtered_indices = matches.into_iter().map(|(_, idx)| idx).collect();
         }
 
@@ -157,6 +252,7 @@ impl App {
         }
         self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(self.selected_index) });
     }
+
 
     pub fn next(&mut self, conn: &Connection) {
         if !self.filtered_indices.is_empty() {
@@ -197,12 +293,16 @@ impl App {
     pub fn increase_panel_width(&mut self) {
         if self.left_panel_percent < 70 {
             self.left_panel_percent += 5;
+            // Persist so the width survives restarts
+            self.config.display.left_pane_width = self.left_panel_percent as u32;
         }
     }
 
     pub fn decrease_panel_width(&mut self) {
         if self.left_panel_percent > 20 {
             self.left_panel_percent -= 5;
+            // Persist so the width survives restarts
+            self.config.display.left_pane_width = self.left_panel_percent as u32;
         }
     }
 
@@ -255,12 +355,36 @@ impl App {
         let current_lang = self.config.default_language.to_lowercase();
         let lang_idx = SUPPORTED_LANGUAGES.iter().position(|l| *l == current_lang).unwrap_or(0);
 
+        let sort_idx = match self.sort_order {
+            SortOrder::Date => 0,
+            SortOrder::Id => 1,
+            SortOrder::Name => 2,
+        };
+
         self.active_modal = Some(ActiveModal::Settings(SettingsModalState {
             theme_idx,
             lang_idx,
+            sort_idx,
             focus_idx: 0,
         }));
     }
+
+    pub fn toggle_sort(&mut self, conn: &Connection) {
+        self.sort_order = match self.sort_order {
+            SortOrder::Date => SortOrder::Id,
+            SortOrder::Id => SortOrder::Name,
+            SortOrder::Name => SortOrder::Date,
+        };
+        self.config.display.sort_by = match self.sort_order {
+            SortOrder::Date => "date".to_string(),
+            SortOrder::Id => "id".to_string(),
+            SortOrder::Name => "name".to_string(),
+        };
+        self.set_status_message(format!("Sorted by: {}", self.sort_order.label()));
+        self.apply_filter();
+        self.reload_active_snippet(conn);
+    }
+
 
     pub fn confirm_delete_current(&mut self) {
         if let Some(ref snip) = self.active_snippet {
@@ -346,18 +470,31 @@ impl App {
         let available_themes = get_available_themes(Some(&self.config.display.custom_theme));
         let (theme_name, theme) = &available_themes[state.theme_idx.min(available_themes.len() - 1)];
         let lang = SUPPORTED_LANGUAGES[state.lang_idx.min(SUPPORTED_LANGUAGES.len() - 1)];
+        let sort_opt = match state.sort_idx {
+            1 => SortOrder::Id,
+            2 => SortOrder::Name,
+            _ => SortOrder::Date,
+        };
 
         self.theme = theme.clone();
+        self.sort_order = sort_opt;
         self.config.display.theme = theme_name.to_lowercase().replace(' ', "-");
         self.config.default_language = lang.to_string();
+        self.config.display.sort_by = match sort_opt {
+            SortOrder::Date => "date".to_string(),
+            SortOrder::Id => "id".to_string(),
+            SortOrder::Name => "name".to_string(),
+        };
 
         if let Err(e) = save_config(&self.app_dir, &self.config) {
             self.set_status_message(format!("Failed to save config: {}", e));
         } else {
-            self.set_status_message(format!("Settings saved: Theme = {}, Default Lang = {}", theme_name, lang));
+            self.set_status_message(format!("Settings saved: Theme = {}, Lang = {}, Sort = {}", theme_name, lang, sort_opt.label()));
         }
+        self.apply_filter();
         self.active_modal = None;
     }
+
 
     pub fn set_status_message(&mut self, msg: String) {
         self.status_message = Some((msg, Instant::now()));
@@ -437,5 +574,51 @@ mod tests {
 
         app.decrease_panel_width();
         assert_eq!(app.left_panel_percent, initial);
+    }
+
+    #[test]
+    fn test_natural_cmp() {
+        assert_eq!(natural_cmp("CP1", "CP2"), std::cmp::Ordering::Less);
+        assert_eq!(natural_cmp("CP2", "CP10"), std::cmp::Ordering::Less);
+        assert_eq!(natural_cmp("CP0001", "CP0002"), std::cmp::Ordering::Less);
+        assert_eq!(natural_cmp("CP10", "CP2"), std::cmp::Ordering::Greater);
+        assert_eq!(natural_cmp("ALG.1", "ALG.2"), std::cmp::Ordering::Less);
+        assert_eq!(natural_cmp("same", "SAME"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn test_app_sorting_by_id_and_name() {
+        let dir = tempdir().unwrap();
+        let mut conn = init_db(dir.path()).unwrap();
+
+        let id1 = add_snippet(&mut conn, dir.path(), "Zebra", "", "", "", "z()", Some("cpp"), None).unwrap();
+        let id2 = add_snippet(&mut conn, dir.path(), "Apple", "", "", "", "a()", Some("rust"), None).unwrap();
+
+        let mut app = App::new(&conn, dir.path());
+
+        // Sort by ID
+        app.sort_order = SortOrder::Id;
+        app.apply_filter();
+        let first_id = &app.all_snippets[app.filtered_indices[0]].id;
+        let second_id = &app.all_snippets[app.filtered_indices[1]].id;
+        assert_eq!(first_id, &id1); // id1 created first, so lower number
+        assert_eq!(second_id, &id2);
+
+        // Sort by Name
+        app.sort_order = SortOrder::Name;
+        app.apply_filter();
+        let first_title = &app.all_snippets[app.filtered_indices[0]].title;
+        let second_title = &app.all_snippets[app.filtered_indices[1]].title;
+        assert_eq!(first_title, "Apple");
+        assert_eq!(second_title, "Zebra");
+
+        // Toggle sort cycles Date -> Id -> Name -> Date
+        app.sort_order = SortOrder::Date;
+        app.toggle_sort(&conn);
+        assert_eq!(app.sort_order, SortOrder::Id);
+        app.toggle_sort(&conn);
+        assert_eq!(app.sort_order, SortOrder::Name);
+        app.toggle_sort(&conn);
+        assert_eq!(app.sort_order, SortOrder::Date);
     }
 }

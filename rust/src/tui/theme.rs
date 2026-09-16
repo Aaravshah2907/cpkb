@@ -97,19 +97,38 @@ pub fn parse_color(s: &str) -> Option<Color> {
 
 pub const THEME_COSMERE: Theme = Theme {
     name: "Cosmere",
-    background: Color::Rgb(15, 23, 42),       // Slate 900
-    surface: Color::Rgb(30, 41, 59),          // Slate 800
-    border: Color::Rgb(51, 65, 85),           // Slate 700
-    border_focused: Color::Rgb(56, 189, 248), // Sky 400 (Honor Blue)
-    primary: Color::Rgb(56, 189, 248),        // Sky 400
-    secondary: Color::Rgb(245, 158, 11),      // Amber 500 (Stormlight Gold)
-    accent: Color::Rgb(168, 85, 247),         // Purple 500 (Voidbringer Violet)
-    text: Color::Rgb(248, 250, 252),          // Slate 50
-    text_dim: Color::Rgb(148, 163, 184),      // Slate 400
-    success: Color::Rgb(16, 185, 129),        // Emerald 500 (Edgedancer)
-    warning: Color::Rgb(245, 158, 11),        // Amber 500
-    error: Color::Rgb(239, 68, 68),           // Red 500
+    // Background: Deep Night #001a33, Surface slightly lighter
+    background: Color::Rgb(0, 26, 51),        // Deep Night
+    surface: Color::Rgb(10, 38, 68),          // Slightly lighter night
+    border: Color::Rgb(112, 128, 144),        // Slate #708090
+    border_focused: Color::Rgb(0, 191, 255),  // Sapphire #00BFFF
+    primary: Color::Rgb(0, 168, 232),         // Honorspren Sky Blue #00A8E8
+    secondary: Color::Rgb(255, 215, 0),       // Honor Gold #FFD700
+    accent: Color::Rgb(218, 112, 214),        // Cryptic Orchid #DA70D6
+    text: Color::Rgb(200, 232, 245),          // Preservation Mist #C8E8F5 (soft white)
+    text_dim: Color::Rgb(112, 128, 144),      // Slate #708090
+    success: Color::Rgb(80, 250, 123),        // Emerald #50fa7b
+    warning: Color::Rgb(255, 184, 108),       // Amber #ffb86c
+    error: Color::Rgb(237, 135, 150),         // Crimson #ed8796
 };
+
+/// Scadrial theme using Preservation (mist/glacial blues) and Ruin (maroon/ash) colors.
+pub const THEME_SCADRIAL: Theme = Theme {
+    name: "Scadrial",
+    background: Color::Rgb(26, 42, 58),       // Preservation Deep #1A2A3A
+    surface: Color::Rgb(38, 56, 75),          // Slightly lighter
+    border: Color::Rgb(93, 168, 204),         // Preservation Glacial muted
+    border_focused: Color::Rgb(195, 174, 232),// Preservation Lavender #C3AEE8
+    primary: Color::Rgb(93, 168, 204),        // Preservation Glacial #5DA8CC
+    secondary: Color::Rgb(232, 213, 160),     // Preservation Atium #E8D5A0
+    accent: Color::Rgb(195, 174, 232),        // Preservation Lavender #C3AEE8
+    text: Color::Rgb(200, 232, 245),          // Preservation Mist #C8E8F5
+    text_dim: Color::Rgb(107, 83, 53),        // Ruin Bronze muted
+    success: Color::Rgb(93, 168, 204),        // Glacial teal for success
+    warning: Color::Rgb(139, 105, 20),        // Ruin Spike #8B6914
+    error: Color::Rgb(107, 26, 26),           // Ruin Maroon #6B1A1A (brighter for visibility)
+};
+
 
 pub const THEME_CATPPUCCIN: Theme = Theme {
     name: "Catppuccin Mocha",
@@ -256,6 +275,7 @@ pub fn from_custom(custom: &CustomTheme) -> Theme {
 
 pub const THEMES: &[(&str, Theme)] = &[
     ("Cosmere", THEME_COSMERE),
+    ("Scadrial", THEME_SCADRIAL),
     ("Catppuccin Mocha", THEME_CATPPUCCIN),
     ("Tokyo Night", THEME_TOKYO_NIGHT),
     ("Nord", THEME_NORD),
@@ -291,6 +311,7 @@ pub fn get_theme(name: &str, custom: Option<&CustomTheme>) -> Theme {
                 from_custom(&CustomTheme::default())
             }
         }
+        "scadrial" => THEME_SCADRIAL,
         "catppuccin" | "mocha" | "catppuccin-mocha" => THEME_CATPPUCCIN,
         "tokyo-night" | "tokyonight" => THEME_TOKYO_NIGHT,
         "nord" => THEME_NORD,
@@ -301,6 +322,7 @@ pub fn get_theme(name: &str, custom: Option<&CustomTheme>) -> Theme {
         _ => THEME_COSMERE,
     }
 }
+
 
 /// Deterministic, high-contrast, beautiful palette for snippet IDs across all terminal themes.
 pub const ID_PALETTE: &[Color] = &[
@@ -318,7 +340,7 @@ pub const ID_PALETTE: &[Color] = &[
     Color::Rgb(252, 165, 165), // Soft Peach
 ];
 
-/// Return a deterministic distinct color for any snippet ID.
+/// Return a deterministic distinct color for any snippet ID (hash-based fallback).
 pub fn get_id_color(id: &str) -> Color {
     if id.is_empty() {
         return ID_PALETTE[0];
@@ -331,6 +353,29 @@ pub fn get_id_color(id: &str) -> Color {
     ID_PALETTE[idx]
 }
 
+/// Resolve the color for a snippet ID, preferring per-format config colors if set.
+///
+/// Checks `id_formats` map for a format whose prefix matches the beginning of `id`.
+/// Falls back to deterministic hash-based palette color if no config color is set.
+pub fn resolve_id_color(
+    id: &str,
+    id_formats: &std::collections::BTreeMap<String, crate::config::IdFormatConfig>,
+) -> Color {
+    // Find the id_format whose prefix best matches this ID
+    for fmt in id_formats.values() {
+        if let Some(ref prefix) = fmt.prefix {
+            if !prefix.is_empty() && id.starts_with(prefix.as_str()) {
+                if let Some(ref color_str) = fmt.color {
+                    if let Some(c) = parse_color(color_str) {
+                        return c;
+                    }
+                }
+            }
+        }
+    }
+    get_id_color(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,10 +385,30 @@ mod tests {
         assert_eq!(get_theme_by_name("catppuccin").name, "Catppuccin Mocha");
         assert_eq!(get_theme_by_name("dracula").name, "Dracula");
         assert_eq!(get_theme_by_name("cosmere").name, "Cosmere");
+        assert_eq!(get_theme_by_name("scadrial").name, "Scadrial");
         assert_eq!(get_theme_by_name("solarized").name, "Solarized Dark");
         assert_eq!(get_theme_by_name("synthwave").name, "Synthwave");
         assert_eq!(get_theme_by_name("custom").name, "Custom");
         assert_eq!(get_theme_by_name("default").name, "Cosmere");
+    }
+
+    #[test]
+    fn test_cosmere_theme_uses_correct_palette() {
+        // Ensure THEME_COSMERE uses actual Cosmere colors from the skill, not generic blue
+        assert_eq!(THEME_COSMERE.primary, Color::Rgb(0, 168, 232));       // Honorspren Sky Blue
+        assert_eq!(THEME_COSMERE.secondary, Color::Rgb(255, 215, 0));     // Honor Gold
+        assert_eq!(THEME_COSMERE.accent, Color::Rgb(218, 112, 214));      // Cryptic Orchid
+        assert_eq!(THEME_COSMERE.background, Color::Rgb(0, 26, 51));      // Deep Night
+        assert_eq!(THEME_COSMERE.success, Color::Rgb(80, 250, 123));      // Emerald
+        assert_eq!(THEME_COSMERE.warning, Color::Rgb(255, 184, 108));     // Amber
+        assert_eq!(THEME_COSMERE.error, Color::Rgb(237, 135, 150));       // Crimson
+    }
+
+    #[test]
+    fn test_scadrial_theme_uses_preservation_ruin_palette() {
+        assert_eq!(THEME_SCADRIAL.primary, Color::Rgb(93, 168, 204));     // Preservation Glacial
+        assert_eq!(THEME_SCADRIAL.secondary, Color::Rgb(232, 213, 160));  // Preservation Atium
+        assert_eq!(THEME_SCADRIAL.background, Color::Rgb(26, 42, 58));    // Preservation Deep
     }
 
     #[test]
@@ -375,5 +440,27 @@ mod tests {
         assert!(ID_PALETTE.contains(&color2));
         assert!(ID_PALETTE.contains(&color3));
     }
+
+    #[test]
+    fn test_resolve_id_color_uses_config_override() {
+        use crate::config::IdFormatConfig;
+        use std::collections::BTreeMap;
+
+        let mut id_formats: BTreeMap<String, IdFormatConfig> = BTreeMap::new();
+        id_formats.insert("cp".to_string(), IdFormatConfig {
+            prefix: Some("CP".to_string()),
+            width: None,
+            pattern: None,
+            color: Some("#ff0000".to_string()), // Explicit red
+        });
+
+        let c = resolve_id_color("CP001", &id_formats);
+        assert_eq!(c, Color::Rgb(255, 0, 0));
+
+        // Non-matching prefix falls back to hash
+        let c2 = resolve_id_color("ms_001", &id_formats);
+        assert!(ID_PALETTE.contains(&c2));
+    }
 }
+
 

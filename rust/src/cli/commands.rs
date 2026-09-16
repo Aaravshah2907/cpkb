@@ -7,7 +7,10 @@ use rusqlite::Connection;
 
 use crate::clipboard::copy_to_clipboard;
 use crate::config::{load_config, save_config};
-use crate::db::snippets::{add_snippet, delete_snippet, get_snippet, list_snippets, recent_snippets, update_snippet, SnippetSummary};
+use crate::db::snippets::{
+    add_snippet, delete_snippet, get_snippet, list_snippets_sorted, recent_snippets,
+    update_snippet, SnippetSortField, SnippetSummary,
+};
 use crate::db::search::{query_snippets, search_snippets};
 use crate::db::tags::{add_tag, remove_tag};
 use crate::db::usages::{add_usage, get_usage, get_usages, update_usage};
@@ -32,11 +35,17 @@ pub fn print_summaries(rows: &[SnippetSummary]) {
     }
 }
 
-pub fn cmd_list(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
-    let rows = list_snippets(conn)?;
+pub fn cmd_list(conn: &Connection, sort: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let sort_field = match sort.to_lowercase().as_str() {
+        "id" => SnippetSortField::Id,
+        "name" | "title" => SnippetSortField::Name,
+        _ => SnippetSortField::Date,
+    };
+    let rows = list_snippets_sorted(conn, sort_field)?;
     print_summaries(&rows);
     Ok(())
 }
+
 
 pub fn cmd_recent(conn: &Connection, limit: u32) -> Result<(), Box<dyn std::error::Error>> {
     println!("Showing {} most recent snippets:", limit);
@@ -380,6 +389,7 @@ pub fn cmd_id_format_add(
                 prefix: None,
                 width: None,
                 pattern: Some(pat.to_string()),
+                color: None,
             },
         );
     } else if let Some(pfx) = prefix {
@@ -389,6 +399,7 @@ pub fn cmd_id_format_add(
                 prefix: Some(pfx.to_string()),
                 width: Some(serde_json::Value::String("auto".to_string())),
                 pattern: None,
+                color: None,
             },
         );
     } else {
