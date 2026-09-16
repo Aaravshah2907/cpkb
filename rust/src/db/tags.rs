@@ -89,3 +89,77 @@ pub fn remove_tag(conn: &mut Connection, snippet_id: &str, target_tag: &str) -> 
 
     Ok(Some(merged))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{get_in_memory_conn, snippets::insert_snippet_with_id};
+
+    fn setup() -> rusqlite::Connection {
+        let mut conn = get_in_memory_conn().unwrap();
+        insert_snippet_with_id(
+            &mut conn, "T1", "Test Snippet", "", "", "algo, dp", "code", "cpp", None, None,
+        ).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_update_tags_replaces_all() {
+        let conn = setup();
+        // Update with new tags — old ones must be gone
+        update_tags(&conn, "T1", "new_tag, another").unwrap();
+        let count: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM tags WHERE snippet_id = 'T1'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_update_tags_empty_clears_all() {
+        let conn = setup();
+        update_tags(&conn, "T1", "").unwrap();
+        let count: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM tags WHERE snippet_id = 'T1'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 0);
+    }
+
+
+    #[test]
+    fn test_add_tag_lowercases_and_deduplicates() {
+        let mut conn = setup();
+        // Add a new tag
+        let merged1 = add_tag(&mut conn, "T1", "search").unwrap();
+        assert!(merged1.contains("search"));
+        // Re-add with different case — should not duplicate
+        let merged2 = add_tag(&mut conn, "T1", "SEARCH").unwrap();
+        let occurrences = merged2.matches("search").count();
+        assert_eq!(occurrences, 1, "tag must not be duplicated: '{merged2}'");
+    }
+
+    #[test]
+    fn test_add_tag_empty_returns_err() {
+        let mut conn = setup();
+        assert!(add_tag(&mut conn, "T1", "  ").is_err());
+    }
+
+    #[test]
+    fn test_remove_existing_tag() {
+        let mut conn = setup();
+        let result = remove_tag(&mut conn, "T1", "algo").unwrap();
+        assert!(result.is_some());
+        assert!(!result.unwrap().contains("algo"));
+    }
+
+    #[test]
+    fn test_remove_nonexistent_tag_returns_none() {
+        let mut conn = setup();
+        let result = remove_tag(&mut conn, "T1", "ghost_tag").unwrap();
+        assert!(result.is_none());
+    }
+}
+
