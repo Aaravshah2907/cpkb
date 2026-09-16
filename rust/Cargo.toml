@@ -1,0 +1,27 @@
+[package]
+name = "cpkb"
+version = "3.0.0"
+edition = "2021"
+authors = ["Aarav Shah"]
+description = "Competitive Programming Knowledge Base"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive", "cargo"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+arboard = "3.4"
+ratatui = { version = "0.29", features = ["all-widgets"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+tui-textarea = "0.7"
+syntect = "5.2"
+fuzzy-matcher = "0.3"
+inquire = "0.7"
+tempfile = "3.17"
+colored = "3.0"
+
+[dev-dependencies]
+tempfile = "3.17"
