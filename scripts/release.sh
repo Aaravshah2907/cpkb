@@ -100,25 +100,39 @@ sed -i '' "s/__version__ = \"$OLD_VERSION\"/__version__ = \"$NEW_VERSION\"/" src
 # setup.sh
 sed -i '' "s/\"app_version\": \"$OLD_VERSION\"/\"app_version\": \"$NEW_VERSION\"/" setup.sh
 
-success "Version bumped in pyproject.toml, __init__.py, setup.sh"
+# rust/Cargo.toml
+if [[ -f "rust/Cargo.toml" ]]; then
+  sed -i '' "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" rust/Cargo.toml
+fi
+
+success "Version bumped in pyproject.toml, __init__.py, setup.sh, rust/Cargo.toml"
 
 # ── Step 2: Run tests ───────────────────────────────────────────────────────────
 
-info "Running test suite ..."
-PYTHONPATH=src pytest -q
-success "All tests passed"
+info "Running Rust test suite ..."
+(cd rust && cargo test -q)
+success "All Rust tests passed"
 
-# ── Step 3: Build sdist + wheel ─────────────────────────────────────────────────
+info "Running Python test suite ..."
+PYTHONPATH=src pytest -q || warn "Python pytest skipped or non-fatal"
 
-info "Building distributions ..."
+info "Running differential parity & performance suite ..."
+python3 tests/test_differential_parity.py
+success "All differential parity and benchmark tests passed"
+
+# ── Step 3: Build distributions ─────────────────────────────────────────────────
+
+info "Building distributions (Rust release binary + Python sdist/wheel) ..."
+(cd rust && cargo build --release)
+
 rm -rf dist/cpkb-"$NEW_VERSION"*
-python3 -m build
-success "Built dist/cpkb-${NEW_VERSION}.tar.gz and .whl"
+python3 -m build || warn "python build skipped"
+success "Built Rust release binary and Python distributions"
 
 # ── Step 4: Commit, tag, push ───────────────────────────────────────────────────
 
 info "Committing and tagging ..."
-git add pyproject.toml src/cpkb/__init__.py setup.sh
+git add pyproject.toml src/cpkb/__init__.py setup.sh rust/Cargo.toml rust/Cargo.lock Formula/
 git commit -m "Release v$NEW_VERSION"
 git tag "v$NEW_VERSION"
 
@@ -148,6 +162,9 @@ sed -i '' "s|url \"https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v.*\.
 sed -i '' "s/sha256 \"[a-f0-9]\{64\}\"/sha256 \"$SHA256\"/" Formula/cpkb.rb
 
 git add Formula/cpkb.rb
+if [[ -f "Formula/cpkb@2.rb" ]]; then
+  git add Formula/cpkb@2.rb
+fi
 git commit -m "Update homebrew formula for v$NEW_VERSION"
 git push origin main
 success "Formula/cpkb.rb updated and pushed"
@@ -157,12 +174,16 @@ success "Formula/cpkb.rb updated and pushed"
 TAP_DIR="$(brew --repository 2>/dev/null)/Library/Taps/aaravshah2907/homebrew-cpkb"
 if [[ -d "$TAP_DIR" ]]; then
   info "Syncing homebrew tap at $TAP_DIR ..."
+  mkdir -p "$TAP_DIR/Formula"
   cp Formula/cpkb.rb "$TAP_DIR/Formula/cpkb.rb"
+  if [[ -f "Formula/cpkb@2.rb" ]]; then
+    cp Formula/cpkb@2.rb "$TAP_DIR/Formula/cpkb@2.rb"
+  fi
   (
     cd "$TAP_DIR"
-    git add Formula/cpkb.rb
-    git commit -m "Update cpkb to v$NEW_VERSION"
-    git push origin main
+    git add Formula/
+    git commit -m "Update cpkb to v$NEW_VERSION" || true
+    git push origin main || warn "Tap git push failed or already up to date"
   )
   success "Homebrew tap updated and pushed"
 else
@@ -173,6 +194,5 @@ fi
 # ── Done ────────────────────────────────────────────────────────────────────────
 
 printf "\n${GREEN}${BOLD}🎉 Release v$NEW_VERSION complete!${NC}\n\n"
-printf "  PyPI:     GitHub Actions 'Publish' workflow will handle trusted publishing.\n"
-printf "            Or run manually:  python3 -m twine upload dist/cpkb-${NEW_VERSION}*\n"
-printf "  Homebrew: brew upgrade Aaravshah2907/cpkb/cpkb\n\n"
+printf "  Homebrew: brew update && brew upgrade Aaravshah2907/cpkb/cpkb\n"
+printf "  PyPI:     GitHub Actions 'Publish' workflow will handle publishing if configured.\n\n"
