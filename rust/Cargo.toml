@@ -1,6 +1,6 @@
 [package]
 name = "cpkb"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2021"
 authors = ["Aarav Shah"]
 description = "Competitive Programming Knowledge Base"
