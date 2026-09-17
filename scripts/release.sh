@@ -108,19 +108,22 @@ fi
 
 info "Bumping version $OLD_VERSION → $NEW_VERSION ..."
 
-# rust/Cargo.toml (primary — only bump the top-level package version, not deps)
-sed -i '' "0,/^version = \"$OLD_VERSION\"/{s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/}" rust/Cargo.toml
-
-# pyproject.toml
-sed -i '' "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" pyproject.toml
-
-# src/cpkb/__init__.py (git-tracked despite .gitignore entry due to history)
-if [[ -f "src/cpkb/__init__.py" ]]; then
-  sed -i '' "s/__version__ = \"$OLD_VERSION\"/__version__ = \"$NEW_VERSION\"/" src/cpkb/__init__.py
-fi
-
-# setup.sh — update the app_version in the embedded config JSON
-sed -i '' "s/\"app_version\": \"$OLD_VERSION\"/\"app_version\": \"$NEW_VERSION\"/" setup.sh
+python3 -c "
+from pathlib import Path
+for filepath in ['rust/Cargo.toml', 'pyproject.toml', 'src/cpkb/__init__.py', 'setup.sh']:
+    p = Path(filepath)
+    if p.exists():
+        text = p.read_text(encoding='utf-8')
+        if filepath == 'rust/Cargo.toml':
+            text = text.replace('version = \"$OLD_VERSION\"', 'version = \"$NEW_VERSION\"', 1)
+        elif filepath == 'pyproject.toml':
+            text = text.replace('version = \"$OLD_VERSION\"', 'version = \"$NEW_VERSION\"', 1)
+        elif filepath == 'src/cpkb/__init__.py':
+            text = text.replace('__version__ = \"$OLD_VERSION\"', '__version__ = \"$NEW_VERSION\"', 1)
+        elif filepath == 'setup.sh':
+            text = text.replace('\"app_version\": \"$OLD_VERSION\"', '\"app_version\": \"$NEW_VERSION\"', 1)
+        p.write_text(text, encoding='utf-8')
+"
 
 success "Version bumped in rust/Cargo.toml, pyproject.toml, __init__.py, setup.sh"
 
@@ -187,9 +190,16 @@ success "SHA256: $SHA256"
 # ── Step 6: Update Formula/cpkb.rb ─────────────────────────────────────────────
 
 info "Updating Formula/cpkb.rb ..."
-sed -i '' "s|url \"https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v.*\.tar\.gz\"|url \"$TARBALL_URL\"|" Formula/cpkb.rb
-sed -i '' "s/sha256 \"[a-f0-9]\{64\}\"/sha256 \"$SHA256\"/" Formula/cpkb.rb
-sed -i '' "s/assert_match \".*\", shell_output(\"#{bin}\/cpkb --version\")/assert_match \"$NEW_VERSION\", shell_output(\"#{bin}\/cpkb --version\")/" Formula/cpkb.rb
+python3 -c "
+from pathlib import Path
+import re
+p = Path('Formula/cpkb.rb')
+text = p.read_text(encoding='utf-8')
+text = re.sub(r'url \"https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v.*\.tar\.gz\"', 'url \"$TARBALL_URL\"', text)
+text = re.sub(r'sha256 \"[a-f0-9]{64}\"', 'sha256 \"$SHA256\"', text)
+text = re.sub(r'assert_match \".*\", shell_output\(\"#{bin}/cpkb --version\"\)', 'assert_match \"$NEW_VERSION\", shell_output(\"#{bin}/cpkb --version\")', text)
+p.write_text(text, encoding='utf-8')
+"
 
 git add Formula/cpkb.rb
 [[ -f "Formula/cpkb@2.rb" ]] && git add Formula/cpkb@2.rb
