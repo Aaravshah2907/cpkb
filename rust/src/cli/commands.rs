@@ -35,14 +35,18 @@ pub fn print_summaries(rows: &[SnippetSummary]) {
     }
 }
 
-pub fn cmd_list(conn: &Connection, sort: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn cmd_list(conn: &Connection, sort: &str, as_json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let sort_field = match sort.to_lowercase().as_str() {
         "id" => SnippetSortField::Id,
         "name" | "title" => SnippetSortField::Name,
         _ => SnippetSortField::Date,
     };
     let rows = list_snippets_sorted(conn, sort_field)?;
-    print_summaries(&rows);
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+    } else {
+        print_summaries(&rows);
+    }
     Ok(())
 }
 
@@ -54,10 +58,14 @@ pub fn cmd_recent(conn: &Connection, limit: u32) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-pub fn cmd_search(conn: &Connection, query: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn cmd_search(conn: &Connection, query: &str, as_json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let rows = search_snippets(conn, query)?;
-    println!("Found {} snippet(s) matching '{}':", rows.len(), query);
-    print_summaries(&rows);
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+    } else {
+        println!("Found {} snippet(s) matching '{}':", rows.len(), query);
+        print_summaries(&rows);
+    }
     Ok(())
 }
 

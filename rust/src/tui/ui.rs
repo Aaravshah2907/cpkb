@@ -10,7 +10,7 @@ use ratatui::Frame;
 
 use crate::tui::app::{
     ActiveModal, AddSnippetModalState, App, CustomThemeModalState, EditSnippetModalState,
-    SettingsModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, SUPPORTED_LANGUAGES,
+    SettingsModalState, TagSelectModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, SUPPORTED_LANGUAGES,
 };
 use crate::tui::badges::get_language_badge;
 use crate::tui::theme::{get_available_themes, parse_color, resolve_id_color};
@@ -68,6 +68,7 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
             ActiveModal::EditSnippet(state) => render_edit_modal(f, app, size, state),
             ActiveModal::Settings(state) => render_settings_modal(f, app, size, state),
             ActiveModal::CustomTheme(state) => render_custom_theme_modal(f, app, size, &state),
+            ActiveModal::TagSelect(state) => render_tag_select_modal(f, app, size, &state),
         }
     }
 }
@@ -217,7 +218,15 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let sort_label = app.sort_order.label();
-    let list_title = format!(" Snippets ({}) [Sort: {}] ", app.filtered_indices.len(), sort_label);
+    let mut filter_tags = Vec::new();
+    filter_tags.push(format!("Sort: {}", sort_label));
+    if let Some(ref l) = app.language_filter {
+        filter_tags.push(format!("Lang: {}", l));
+    }
+    if let Some(ref t) = app.tag_filter {
+        filter_tags.push(format!("Tag: {}", t));
+    }
+    let list_title = format!(" Snippets ({}) [{}] ", app.filtered_indices.len(), filter_tags.join(" | "));
     let list_widget = List::new(items)
         .block(
             Block::default()
@@ -320,21 +329,25 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     } else {
         let keys = Line::from(vec![
             Span::styled(" a ", Style::default().bg(app.theme.surface).fg(app.theme.success).add_modifier(Modifier::BOLD)),
-            Span::raw(" Add  "),
+            Span::raw(" Add "),
             Span::styled(" e ", Style::default().bg(app.theme.surface).fg(app.theme.primary).add_modifier(Modifier::BOLD)),
-            Span::raw(" Edit  "),
+            Span::raw(" Edit "),
             Span::styled(" d ", Style::default().bg(app.theme.surface).fg(app.theme.error).add_modifier(Modifier::BOLD)),
-            Span::raw(" Del  "),
-            Span::styled(" c ", Style::default().bg(app.theme.surface).fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
-            Span::raw(" Copy  "),
-            Span::styled(" s ", Style::default().bg(app.theme.surface).fg(app.theme.accent).add_modifier(Modifier::BOLD)),
-            Span::raw(" Config  "),
+            Span::raw(" Del "),
+            Span::styled(" y ", Style::default().bg(app.theme.surface).fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
+            Span::raw(" Yank "),
+            Span::styled(" L ", Style::default().bg(app.theme.surface).fg(app.theme.accent).add_modifier(Modifier::BOLD)),
+            Span::raw(" Lang "),
+            Span::styled(" t ", Style::default().bg(app.theme.surface).fg(app.theme.primary).add_modifier(Modifier::BOLD)),
+            Span::raw(" Tag "),
             Span::styled(" o ", Style::default().bg(app.theme.surface).fg(app.theme.secondary).add_modifier(Modifier::BOLD)),
-            Span::raw(" Sort  "),
+            Span::raw(" Sort "),
+            Span::styled(" s ", Style::default().bg(app.theme.surface).fg(app.theme.accent).add_modifier(Modifier::BOLD)),
+            Span::raw(" Config "),
             Span::styled(" / ", Style::default().bg(app.theme.surface).fg(app.theme.primary).add_modifier(Modifier::BOLD)),
-            Span::raw(" Search  "),
+            Span::raw(" Search "),
             Span::styled(" ? ", Style::default().bg(app.theme.surface).fg(app.theme.text_dim).add_modifier(Modifier::BOLD)),
-            Span::raw(" Help  "),
+            Span::raw(" Help "),
             Span::styled(" q ", Style::default().bg(app.theme.surface).fg(app.theme.text_dim).add_modifier(Modifier::BOLD)),
             Span::raw(" Quit"),
         ]);
@@ -705,7 +718,7 @@ fn render_custom_theme_modal(f: &mut Frame, app: &App, area: Rect, state: &Custo
 
 
 fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
-    let modal_area = centered_rect(65, 65, area);
+    let modal_area = centered_rect(65, 70, area);
     f.render_widget(Clear, modal_area);
 
     let help_text = vec![
@@ -716,14 +729,16 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![Span::styled("  g / G         ", Style::default().fg(app.theme.secondary)), Span::raw("Jump to top / bottom of list")]),
         Line::from(vec![Span::styled("  /             ", Style::default().fg(app.theme.secondary)), Span::raw("Search and fuzzy filter snippets in real-time")]),
         Line::from(vec![Span::styled("  o             ", Style::default().fg(app.theme.secondary)), Span::raw("Cycle sort order (Snippet ID, Name, Date)")]),
+        Line::from(vec![Span::styled("  y / c         ", Style::default().fg(app.theme.secondary)), Span::raw("Copy / Yank selected snippet code to clipboard")]),
+        Line::from(vec![Span::styled("  L             ", Style::default().fg(app.theme.accent)), Span::raw("Cycle language filter (All → cpp → python → rust → ...)" )]),
+        Line::from(vec![Span::styled("  t             ", Style::default().fg(app.theme.primary)), Span::raw("Open Tag selector modal (filter by tag)")]),
         Line::from(vec![Span::styled("  a             ", Style::default().fg(app.theme.success)), Span::raw("Add a new snippet (modal form / $EDITOR)")]),
         Line::from(vec![Span::styled("  e / Enter     ", Style::default().fg(app.theme.primary)), Span::raw("Edit selected snippet (modal form / $EDITOR)")]),
         Line::from(vec![Span::styled("  Ctrl+e        ", Style::default().fg(app.theme.primary)), Span::raw("Directly open selected snippet in $EDITOR")]),
         Line::from(vec![Span::styled("  s / ,         ", Style::default().fg(app.theme.accent)), Span::raw("Open Settings & Theme selector")]),
-        Line::from(vec![Span::styled("  c             ", Style::default().fg(app.theme.secondary)), Span::raw("Copy selected snippet code to clipboard")]),
         Line::from(vec![Span::styled("  [ / ]         ", Style::default().fg(app.theme.text_dim)), Span::raw("Decrease / increase left panel width")]),
         Line::from(vec![Span::styled("  d             ", Style::default().fg(app.theme.error)), Span::raw("Delete selected snippet")]),
-        Line::from(vec![Span::styled("  Esc           ", Style::default().fg(app.theme.text_dim)), Span::raw("Clear search filter / close active modal")]),
+        Line::from(vec![Span::styled("  Esc           ", Style::default().fg(app.theme.text_dim)), Span::raw("Clear search, language & tag filters / close modal")]),
         Line::from(vec![Span::styled("  q             ", Style::default().fg(app.theme.text_dim)), Span::raw("Quit CPKB")]),
         Line::from(""),
         Line::from(vec![Span::styled("Press Esc or ? to close this help guide.", Style::default().fg(app.theme.text_dim))]),
@@ -741,6 +756,58 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         .alignment(Alignment::Left);
 
     f.render_widget(help_p, modal_area);
+}
+
+fn render_tag_select_modal(f: &mut Frame, app: &App, area: Rect, state: &TagSelectModalState) {
+    let modal_area = centered_rect(55, 60, area);
+    f.render_widget(Clear, modal_area);
+
+    let bt = border_type_from_config(&app.config.display.border_style);
+    let primary = effective_primary(app);
+
+    let items: Vec<ListItem> = state
+        .tags
+        .iter()
+        .enumerate()
+        .map(|(idx, (tag, count))| {
+            let is_selected = state.selected_idx == idx;
+            let prefix = if is_selected { "▶ " } else { "  " };
+            let tag_style = if is_selected {
+                Style::default().fg(primary).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.text)
+            };
+            let count_style = if is_selected {
+                Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.text_dim)
+            };
+
+            let item_line = Line::from(vec![
+                Span::styled(prefix, Style::default().fg(primary)),
+                Span::styled(format!("{:<28}", tag), tag_style),
+                Span::styled(format!("({} snippet{})", count, if *count == 1 { "" } else { "s" }), count_style),
+            ]);
+            let bg_style = if is_selected {
+                app.theme.style_selected()
+            } else {
+                Style::default()
+            };
+            ListItem::new(item_line).style(bg_style)
+        })
+        .collect();
+
+    let tag_list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(bt)
+                .title(Span::styled(" 🏷️ Filter by Tag (Enter: Apply, c: Clear, Esc: Close) ", Style::default().fg(primary).add_modifier(Modifier::BOLD)))
+                .border_style(app.theme.style_border(true))
+                .style(app.theme.style_surface()),
+        );
+
+    f.render_widget(tag_list, modal_area);
 }
 
 fn render_delete_modal(f: &mut Frame, app: &App, area: Rect, id: &str) {

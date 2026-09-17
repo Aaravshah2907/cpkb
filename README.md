@@ -72,6 +72,10 @@ Builds and installs to `~/.cargo/bin/cpkb`, writes an initial `config.json`, and
 ## Shell Completions
 
 ```bash
+# Automatic (detects active shell and installs completion script):
+cpkb install-completions
+
+# Or manual generation:
 # Zsh
 cpkb completions zsh >> ~/.zshrc && source ~/.zshrc
 
@@ -94,8 +98,12 @@ cpkb add                        # Add a snippet interactively
 cpkb list                       # List all snippets (sorted by date)
 cpkb list --sort name           # Sort alphabetically
 cpkb list --sort id             # Sort by ID (natural: CP2 < CP10)
+cpkb list --json                # Output JSON array for scripting
 cpkb search "segment tree"      # Full-text search
+cpkb search "tree" --json       # Search with JSON output
 cpkb show CP0042                # View a snippet's details and usages
+cpkb show CP0042 --json         # View snippet as JSON
+cpkb query                      # Pipeline-friendly ID | Title rows (supports fzf)
 cpkb copy CP0042                # Copy code to clipboard
 cpkb export                     # Export to Markdown
 cpkb stats                      # Database statistics
@@ -113,14 +121,19 @@ Launch with `cpkb tui`.
 |-----|--------|
 | `j` / `k` or `↑` / `↓` | Navigate snippet list |
 | `Enter` | View snippet detail / code |
-| `/` | Live search / filter |
-| `a` | Add new snippet |
-| `e` | Edit selected snippet |
+| `/` | Live search / fuzzy filter |
+| `y` / `c` | **Quick Yank / Copy** selected code to clipboard |
+| `L` | **Cycle language filter** (`All` → `cpp` → `python` → `rust` → …) |
+| `t` | **Open Tag selector modal** to filter by specific tag |
+| `a` | Add new snippet (modal form / `$EDITOR`) |
+| `e` | Edit selected snippet (modal form / `$EDITOR`) |
+| `Ctrl+e` | Directly open selected snippet in `$EDITOR` |
 | `d` | Delete selected snippet (confirm prompt) |
-| `o` | Cycle sort order (date → ID → name → …) |
+| `o` | Cycle sort order (date → ID → name) |
 | `[` / `]` | Resize left pane narrower / wider |
-| `s` | Open Settings modal |
+| `s` / `,` | Open Settings modal |
 | `?` | Help overlay |
+| `Esc` | Clear search, language & tag filters / close modal |
 | `q` / `Ctrl+C` | Quit |
 
 ### Settings Modal (`s`)
@@ -147,9 +160,13 @@ cpkb add --id-format algo           # Use a named ID format
 cpkb list                           # List all snippets
 cpkb list --sort id                 # Sort by ID (natural sort)
 cpkb list --sort name               # Sort alphabetically by title
+cpkb list --json                    # Machine-readable JSON array of snippets
 cpkb show <id>                      # Show details, code, and usages
+cpkb show <id> --json               # Snippet details as JSON object
 cpkb search <query>                 # Full-text search (AND across fields)
-cpkb query <query>                  # Pipeline-friendly: outputs id | title rows
+cpkb search <query> --json          # Search results as JSON array
+cpkb query [query]                  # Pipeline-friendly: outputs id | title rows (default: all)
+cpkb query [query] --limit <n>      # Limit query result rows
 cpkb edit <id>                      # Edit in $EDITOR
 cpkb delete <id>                    # Delete permanently
 cpkb copy <id>                      # Copy code to clipboard
@@ -158,6 +175,7 @@ cpkb recent                         # Last 10 snippets added
 cpkb random                         # Random snippet for review
 cpkb stats                          # Database statistics
 cpkb config                         # Show active config and paths
+cpkb install-completions            # Auto-detect shell and install completions
 ```
 
 ### Tags
@@ -266,8 +284,8 @@ Config file: `~/.local/share/cpkb/config.json`
 
 ## Editor Integrations
 
-- **VS Code** — [extras/vscode](extras/vscode): QuickPick snippet search via `cpkb query`, inserts into active editor
-- **Neovim** — [extras/nvim](extras/nvim): Telescope extension for snippet search and insert
+- **VS Code** — [extras/plugins/vscode](extras/plugins/vscode): QuickPick snippet search via `cpkb query`, inserts into active editor
+- **Neovim** — [extras/plugins/nvim](extras/plugins/nvim): Telescope extension for snippet search and insert
 - **SketchyBar (macOS)** — [extras/sketchybar](extras/sketchybar): menu bar snippet search widget
 
 ---

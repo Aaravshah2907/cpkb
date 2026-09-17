@@ -93,6 +93,37 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
                 _ => {}
             },
+            ActiveModal::TagSelect(mut state) => match code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    app.active_modal = None;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !state.tags.is_empty() {
+                        state.selected_idx = (state.selected_idx + 1) % state.tags.len();
+                        app.active_modal = Some(ActiveModal::TagSelect(state));
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if !state.tags.is_empty() {
+                        state.selected_idx = if state.selected_idx == 0 {
+                            state.tags.len() - 1
+                        } else {
+                            state.selected_idx - 1
+                        };
+                        app.active_modal = Some(ActiveModal::TagSelect(state));
+                    }
+                }
+                KeyCode::Enter => {
+                    if !state.tags.is_empty() {
+                        let selected_tag = state.tags[state.selected_idx].0.clone();
+                        app.apply_tag_filter(Some(selected_tag), conn);
+                    }
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Backspace | KeyCode::Delete => {
+                    app.apply_tag_filter(None, conn);
+                }
+                _ => {}
+            },
             ActiveModal::DeleteConfirm(id) => match code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
                     app.execute_delete(conn, &id);
@@ -398,8 +429,14 @@ fn handle_key_event<B: ratatui::backend::Backend>(
         KeyCode::Char('o') | KeyCode::Char('O') => {
             app.toggle_sort(conn);
         }
-        KeyCode::Char('c') => {
+        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Char('y') | KeyCode::Char('Y') => {
             app.copy_current_code();
+        }
+        KeyCode::Char('L') => {
+            app.cycle_language_filter(conn);
+        }
+        KeyCode::Char('t') | KeyCode::Char('T') => {
+            app.open_tag_modal();
         }
         KeyCode::Char('d') => {
             app.confirm_delete_current();
@@ -414,11 +451,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
             app.active_modal = Some(ActiveModal::Help);
         }
         KeyCode::Esc => {
-            if !app.search_query.is_empty() {
-                app.search_query.clear();
-                app.apply_filter();
-                app.reload_active_snippet(conn);
-            }
+            app.clear_all_filters(conn);
         }
         _ => {}
     }

@@ -200,6 +200,12 @@ pub const SUPPORTED_LANGUAGES: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TagSelectModalState {
+    pub tags: Vec<(String, usize)>,
+    pub selected_idx: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ActiveModal {
     Help,
     DeleteConfirm(String), // Snippet ID to delete
@@ -207,6 +213,7 @@ pub enum ActiveModal {
     EditSnippet(EditSnippetModalState),
     Settings(SettingsModalState),
     CustomTheme(CustomThemeModalState),
+    TagSelect(TagSelectModalState),
 }
 
 
@@ -220,6 +227,8 @@ pub struct App {
     pub active_snippet: Option<Snippet>,
     pub search_query: String,
     pub search_active: bool,
+    pub language_filter: Option<String>,
+    pub tag_filter: Option<String>,
     pub theme: Theme,
     pub sort_order: SortOrder,
     pub status_message: Option<(String, Instant)>,
@@ -255,6 +264,8 @@ impl App {
             active_snippet: None,
             search_query: String::new(),
             search_active: false,
+            language_filter: None,
+            tag_filter: None,
             theme,
             sort_order,
             status_message: None,
@@ -295,10 +306,31 @@ impl App {
         self.active_snippet = get_snippet(conn, &summary.id).ok().flatten();
     }
 
-    /// Apply fuzzy / keyword search filter and active sort order across snippets.
+    /// Apply fuzzy / keyword search filter, language filter, tag filter, and active sort order across snippets.
     pub fn apply_filter(&mut self) {
+        let is_eligible = |snip: &SnippetSummary| -> bool {
+            if let Some(ref lang) = self.language_filter {
+                if &snip.language.to_lowercase().trim() != lang {
+                    return false;
+                }
+            }
+            if let Some(ref tag) = self.tag_filter {
+                let tag_lower = tag.to_lowercase();
+                let matches_tag = snip
+                    .tags
+                    .split(',')
+                    .any(|t| t.trim().to_lowercase() == tag_lower);
+                if !matches_tag {
+                    return false;
+                }
+            }
+            true
+        };
+
         if self.search_query.trim().is_empty() {
-            let mut indices: Vec<usize> = (0..self.all_snippets.len()).collect();
+            let mut indices: Vec<usize> = (0..self.all_snippets.len())
+                .filter(|&idx| is_eligible(&self.all_snippets[idx]))
+                .collect();
             match self.sort_order {
                 SortOrder::Id => {
                     indices.sort_by(|&a, &b| natural_cmp(&self.all_snippets[a].id, &self.all_snippets[b].id));
@@ -314,6 +346,9 @@ impl App {
         } else {
             let mut matches = Vec::new();
             for (idx, snip) in self.all_snippets.iter().enumerate() {
+                if !is_eligible(snip) {
+                    continue;
+                }
                 let target = format!("{} {} {}", snip.id, snip.title, snip.tags);
                 if let Some(score) = self.matcher.fuzzy_match(&target, &self.search_query) {
                     matches.push((score, idx));
@@ -522,6 +557,100 @@ impl App {
         self.set_status_message(format!("Sorted by: {}", self.sort_order.label()));
         self.apply_filter();
         self.reload_active_snippet(conn);
+    }
+
+    pub fn cycle_language_filter(&mut self, conn: &Connection) {
+        let mut languages: Vec<String> = self
+            .all_snippets
+            .iter()
+            .map(|s| s.language.to_lowercase().trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        languages.sort();
+        languages.dedup();
+
+        if languages.is_empty() {
+            self.set_status_message("No snippets available to filter.".to_string());
+            return;
+        }
+
+        self.language_filter = match &self.language_filter {
+            None => Some(languages[0].clone()),
+            Some(curr) => {
+                if let Some(pos) = languages.iter().position(|l| l == curr) {
+                    if pos + 1 < languages.len() {
+                        Some(languages[pos + 1].clone())
+                    } else {
+                        None // Wrap back to All
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        self.apply_filter();
+        self.reload_active_snippet(conn);
+        if let Some(ref l) = self.language_filter {
+            self.set_status_message(format!("Filtered by language: {}", l));
+        } else {
+            self.set_status_message("Language filter: All (cleared)".to_string());
+        }
+    }
+
+    pub fn open_tag_modal(&mut self) {
+        use std::collections::HashMap;
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for s in &self.all_snippets {
+            for t in s.tags.split(',') {
+                let tag = t.trim();
+                if !tag.is_empty() {
+                    *counts.entry(tag.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut tags: Vec<(String, usize)> = counts.into_iter().collect();
+        tags.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+        if tags.is_empty() {
+            self.set_status_message("No tags found in knowledge base.".to_string());
+            return;
+        }
+
+        let selected_idx = if let Some(ref current_tag) = self.tag_filter {
+            tags.iter().position(|(t, _)| t == current_tag).unwrap_or(0)
+        } else {
+            0
+        };
+
+        self.active_modal = Some(ActiveModal::TagSelect(TagSelectModalState {
+            tags,
+            selected_idx,
+        }));
+    }
+
+    pub fn apply_tag_filter(&mut self, tag: Option<String>, conn: &Connection) {
+        self.tag_filter = tag.clone();
+        self.active_modal = None;
+        self.apply_filter();
+        self.reload_active_snippet(conn);
+        if let Some(t) = tag {
+            self.set_status_message(format!("Filtered by tag: {}", t));
+        } else {
+            self.set_status_message("Tag filter cleared.".to_string());
+        }
+    }
+
+    pub fn clear_all_filters(&mut self, conn: &Connection) {
+        let had_filter = self.language_filter.is_some() || self.tag_filter.is_some() || !self.search_query.is_empty();
+        self.language_filter = None;
+        self.tag_filter = None;
+        self.search_query.clear();
+        self.apply_filter();
+        self.reload_active_snippet(conn);
+        if had_filter {
+            self.set_status_message("All search, language, and tag filters cleared.".to_string());
+        }
     }
 
 

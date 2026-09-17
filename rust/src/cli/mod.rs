@@ -37,6 +37,10 @@ pub enum Commands {
         /// Sort snippets by field: id, name, or date
         #[arg(short, long, default_value = "date")]
         sort: String,
+
+        /// Output snippets formatted as JSON
+        #[arg(long)]
+        json: bool,
     },
 
 
@@ -54,11 +58,16 @@ pub enum Commands {
     Search {
         /// Search query (multiple keywords are combined with AND logic)
         query: String,
+
+        /// Output search results formatted as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Search snippets and output pipeline-friendly delimited rows (id | title)
     Query {
-        /// Search query string
+        /// Search query string (default: empty to return all snippets)
+        #[arg(default_value = "")]
         query: String,
 
         /// Maximum number of results to return (default: 5)
@@ -190,6 +199,9 @@ pub enum Commands {
         /// Target shell type
         shell: Shell,
     },
+
+    /// Automatically detect active shell and install completion script
+    InstallCompletions,
 }
 
 #[derive(Args, Debug)]
@@ -233,10 +245,10 @@ pub fn run_cli(cli: Cli, conn: &mut Connection, app_dir: &Path) -> Result<(), Bo
     let cmd = cli.command.unwrap_or(Commands::Tui);
     match cmd {
         Commands::Tui => crate::tui::run_tui(conn, app_dir),
-        Commands::List { sort } => commands::cmd_list(conn, &sort),
+        Commands::List { sort, json } => commands::cmd_list(conn, &sort, json),
         Commands::Recent { limit } => commands::cmd_recent(conn, limit),
 
-        Commands::Search { query } => commands::cmd_search(conn, &query),
+        Commands::Search { query, json } => commands::cmd_search(conn, &query, json),
         Commands::Query { query, limit } => commands::cmd_query(conn, &query, limit),
         Commands::Show { id, json } => commands::cmd_show(conn, &id, json),
         Commands::Add { language, id_format } => {
@@ -273,6 +285,9 @@ pub fn run_cli(cli: Cli, conn: &mut Connection, app_dir: &Path) -> Result<(), Bo
         Commands::Completions { shell } => {
             completions::generate_completions(shell);
             Ok(())
+        }
+        Commands::InstallCompletions => {
+            completions::install_completions(app_dir)
         }
     }
 }

@@ -3,10 +3,11 @@
 # release.sh — Automate a cpkb release
 #
 # Usage:
-#   ./scripts/release.sh <new-version>
+#   ./scripts/release.sh [--dry-run] <new-version>
 #
 # Example:
 #   ./scripts/release.sh 3.0.1
+#   ./scripts/release.sh --dry-run 3.0.1
 #
 # This script will:
 #   1. Validate the new version string
@@ -50,25 +51,43 @@ countdown_sleep() {
   printf "\r${CYAN}▸${NC} %s Remaining: 00:00\n" "$message"
 }
 
-# ── Pre-flight checks ──────────────────────────────────────────────────────────
+# ── Parse arguments ──────────────────────────────────────────────────────────
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
+DRY_RUN=false
+NEW_VERSION=""
 
-NEW_VERSION="${1:-}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      NEW_VERSION="$1"
+      shift
+      ;;
+  esac
+done
+
 if [[ -z "$NEW_VERSION" ]]; then
-  die "Usage: $0 <new-version>  (e.g. 3.0.1)"
+  die "Usage: $0 [--dry-run] <new-version>  (e.g. 3.0.1)"
 fi
 
-# Validate semver-ish format
+# Validate semver format
 if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   die "Version must be in X.Y.Z format, got: $NEW_VERSION"
 fi
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
 # Read current version from Cargo.toml (source of truth)
 OLD_VERSION=$(grep '^version = ' rust/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
 info "Current version: ${BOLD}$OLD_VERSION${NC}  (from rust/Cargo.toml)"
 info "New version:     ${BOLD}$NEW_VERSION${NC}"
+if [[ "$DRY_RUN" == "true" ]]; then
+  info "Mode:            ${YELLOW}${BOLD}DRY-RUN (no remote pushes or tags will be created)${NC}"
+fi
 
 if [[ "$OLD_VERSION" == "$NEW_VERSION" ]]; then
   die "New version is the same as current ($OLD_VERSION). Nothing to do. Did you forget to bump?"
@@ -128,6 +147,15 @@ info "Building Python distributions (wheel + sdist) ..."
 rm -rf dist/cpkb-"$NEW_VERSION"*
 python3 -m build || warn "python build skipped (non-fatal for Rust releases)"
 
+if [[ "$DRY_RUN" == "true" ]]; then
+  info "Reverting local version bumps for dry-run ..."
+  git checkout -- rust/Cargo.toml pyproject.toml setup.sh
+  git checkout -- src/cpkb/__init__.py 2>/dev/null || true
+  printf "\n${GREEN}${BOLD}✔ Dry run complete! All tests and builds passed for v$NEW_VERSION.${NC}\n"
+  printf "  No commits, tags, or homebrew formula updates were pushed.\n\n"
+  exit 0
+fi
+
 # ── Step 4: Commit, tag, push ───────────────────────────────────────────────────
 
 info "Committing and tagging ..."
@@ -161,6 +189,7 @@ success "SHA256: $SHA256"
 info "Updating Formula/cpkb.rb ..."
 sed -i '' "s|url \"https://github.com/Aaravshah2907/cpkb/archive/refs/tags/v.*\.tar\.gz\"|url \"$TARBALL_URL\"|" Formula/cpkb.rb
 sed -i '' "s/sha256 \"[a-f0-9]\{64\}\"/sha256 \"$SHA256\"/" Formula/cpkb.rb
+sed -i '' "s/assert_match \".*\", shell_output(\"#{bin}\/cpkb --version\")/assert_match \"$NEW_VERSION\", shell_output(\"#{bin}\/cpkb --version\")/" Formula/cpkb.rb
 
 git add Formula/cpkb.rb
 [[ -f "Formula/cpkb@2.rb" ]] && git add Formula/cpkb@2.rb
