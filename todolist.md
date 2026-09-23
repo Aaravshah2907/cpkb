@@ -14,3 +14,5 @@
 - [x] **Shell Auto-installer**: `cpkb install-completions` dynamically detects shell (zsh/bash/fish) and installs completions.
 - [x] **Optional Query**: `cpkb query` works with or without arguments for `fzf` piping.
 - [x] **Automated Release Script**: `./scripts/release.sh [--dry-run] <version>` with Homebrew tap synchronization.
+- [x] **Update All docs regarding python to rust change:** We need to update all of the appropriate docs as soon as possible.
+- [ ] **ID Format selector in Add/Edit View**: Add dropdown support for selecting/changing snippet ID format in TUI add and edit modal views.
