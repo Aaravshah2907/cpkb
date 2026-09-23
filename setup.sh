@@ -78,7 +78,7 @@ LOAD_CPP="$(prompt_default "Load bundled C++ cheatsheet on setup? (true/false)" 
 cat > "$CONFIG_PATH" <<JSON
 {
   "config_version": 1,
-  "app_version": "3.0.1",
+  "app_version": "3.0.2",
   "default_language": "$DEFAULT_LANGUAGE",
   "editor": {
     "command": "",
