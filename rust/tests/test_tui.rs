@@ -79,6 +79,7 @@ fn test_tui_add_modal_save_flow() {
         use_case: "Autocomplete".to_string(),
         tags: "string, tree, trie".to_string(),
         language: "cpp".to_string(),
+        id_format: "default".to_string(),
         code: "struct TrieNode {};".to_string(),
         focus_idx: 0,
     };
@@ -102,6 +103,7 @@ fn test_tui_add_modal_empty_validation() {
         use_case: "".to_string(),
         tags: "".to_string(),
         language: "cpp".to_string(),
+        id_format: "default".to_string(),
         code: "".to_string(),
         focus_idx: 0,
     };
@@ -128,6 +130,7 @@ fn test_tui_edit_modal_save_flow() {
         use_case: "Updated Use Case".to_string(),
         tags: "updated, tags".to_string(),
         language: "rust".to_string(),
+        id_format: "default".to_string(),
         code: "fn updated() {}".to_string(),
         focus_idx: 0,
     };

@@ -267,7 +267,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     launch_editor_add(terminal, app, conn)?;
                     return Ok(());
                 }
-                if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s')) || (code == KeyCode::Enter && state.focus_idx == 5) {
+                if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s')) || (code == KeyCode::Enter && state.focus_idx == 6) {
                     app.save_new_snippet(conn, state);
                     return Ok(());
                 }
@@ -277,11 +277,24 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Down => {
-                        state.focus_idx = (state.focus_idx + 1) % 6;
+                        state.focus_idx = (state.focus_idx + 1) % 7;
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
                     KeyCode::BackTab | KeyCode::Up => {
-                        state.focus_idx = if state.focus_idx == 0 { 5 } else { state.focus_idx - 1 };
+                        state.focus_idx = if state.focus_idx == 0 { 6 } else { state.focus_idx - 1 };
+                        app.active_modal = Some(ActiveModal::AddSnippet(state));
+                    }
+                    KeyCode::Left | KeyCode::Right if state.focus_idx == 5 => {
+                        let available_formats: Vec<String> = app.config.snippets.id_formats.keys().cloned().collect();
+                        if !available_formats.is_empty() {
+                            let current_idx = available_formats.iter().position(|k| k == &state.id_format).unwrap_or(0);
+                            let next_idx = if code == KeyCode::Right {
+                                (current_idx + 1) % available_formats.len()
+                            } else {
+                                if current_idx == 0 { available_formats.len() - 1 } else { current_idx - 1 }
+                            };
+                            state.id_format = available_formats[next_idx].clone();
+                        }
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
                     KeyCode::Backspace => {
@@ -291,6 +304,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             2 => &mut state.use_case,
                             3 => &mut state.tags,
                             4 => &mut state.language,
+                            5 => &mut state.id_format,
                             _ => &mut state.code,
                         };
                         target.pop();
@@ -303,6 +317,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             2 => &mut state.use_case,
                             3 => &mut state.tags,
                             4 => &mut state.language,
+                            5 => &mut state.id_format,
                             _ => &mut state.code,
                         };
                         target.push(c);
@@ -317,7 +332,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     launch_editor_edit(terminal, app, conn)?;
                     return Ok(());
                 }
-                if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s')) || (code == KeyCode::Enter && state.focus_idx == 5) {
+                if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s')) || (code == KeyCode::Enter && state.focus_idx == 6) {
                     app.save_edited_snippet(conn, state);
                     return Ok(());
                 }
@@ -327,11 +342,24 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Down => {
-                        state.focus_idx = (state.focus_idx + 1) % 6;
+                        state.focus_idx = (state.focus_idx + 1) % 7;
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
                     KeyCode::BackTab | KeyCode::Up => {
-                        state.focus_idx = if state.focus_idx == 0 { 5 } else { state.focus_idx - 1 };
+                        state.focus_idx = if state.focus_idx == 0 { 6 } else { state.focus_idx - 1 };
+                        app.active_modal = Some(ActiveModal::EditSnippet(state));
+                    }
+                    KeyCode::Left | KeyCode::Right if state.focus_idx == 5 => {
+                        let available_formats: Vec<String> = app.config.snippets.id_formats.keys().cloned().collect();
+                        if !available_formats.is_empty() {
+                            let current_idx = available_formats.iter().position(|k| k == &state.id_format).unwrap_or(0);
+                            let next_idx = if code == KeyCode::Right {
+                                (current_idx + 1) % available_formats.len()
+                            } else {
+                                if current_idx == 0 { available_formats.len() - 1 } else { current_idx - 1 }
+                            };
+                            state.id_format = available_formats[next_idx].clone();
+                        }
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
                     KeyCode::Backspace => {
@@ -341,6 +369,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             2 => &mut state.use_case,
                             3 => &mut state.tags,
                             4 => &mut state.language,
+                            5 => &mut state.id_format,
                             _ => &mut state.code,
                         };
                         target.pop();
@@ -353,6 +382,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             2 => &mut state.use_case,
                             3 => &mut state.tags,
                             4 => &mut state.language,
+                            5 => &mut state.id_format,
                             _ => &mut state.code,
                         };
                         target.push(c);

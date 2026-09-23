@@ -366,13 +366,14 @@ fn render_add_modal(f: &mut Frame, app: &App, area: Rect, state: &AddSnippetModa
         ("Use Case", &state.use_case),
         ("Tags (comma separated)", &state.tags),
         ("Language (cpp, rust, python...)", &state.language),
+        ("ID Format (default, ms...)", &state.id_format),
         ("Code", &state.code),
     ];
 
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Add New Snippet", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
-            Span::styled("  (Press Tab to navigate fields, Ctrl+e for $EDITOR, Ctrl+s to Save, Esc to Cancel)", Style::default().fg(app.theme.text_dim)),
+            Span::styled("  (Press Tab to navigate fields, ←/→ for ID Format, Ctrl+e for $EDITOR, Ctrl+s to Save, Esc to Cancel)", Style::default().fg(app.theme.text_dim)),
         ]),
         Line::from(""),
     ];
@@ -395,15 +396,23 @@ fn render_add_modal(f: &mut Frame, app: &App, area: Rect, state: &AddSnippetModa
             let lang_badge = get_language_badge(val);
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(app.theme.primary)),
-                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(format!("{:<28}", label), label_style),
                 Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
                 Span::raw("  "),
                 Span::styled(format!(" {} {} ", lang_badge.icon, lang_badge.name), Style::default().bg(lang_badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)),
             ]));
+        } else if idx == 5 {
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(app.theme.primary)),
+                Span::styled(format!("{:<28}", label), label_style),
+                Span::styled(format!("[ {:^10} ]", if val.is_empty() { "default" } else { val }), val_style),
+                Span::raw("  "),
+                Span::styled("(←/→ or type to select ID format pattern)", Style::default().fg(app.theme.text_dim)),
+            ]));
         } else {
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(app.theme.primary)),
-                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(format!("{:<28}", label), label_style),
                 Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
             ]));
         }
@@ -442,13 +451,14 @@ fn render_edit_modal(f: &mut Frame, app: &App, area: Rect, state: &EditSnippetMo
         ("Use Case", &state.use_case),
         ("Tags (comma separated)", &state.tags),
         ("Language (cpp, rust, python...)", &state.language),
+        ("ID Format (default, ms...)", &state.id_format),
         ("Code", &state.code),
     ];
 
     let mut lines = vec![
         Line::from(vec![
             Span::styled(format!("Editing Snippet: {}", state.id), Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)),
-            Span::styled("  (Press Tab to navigate fields, Ctrl+e for $EDITOR, Ctrl+s to Save)", Style::default().fg(app.theme.text_dim)),
+            Span::styled("  (Press Tab to navigate fields, ←/→ for ID Format, Ctrl+e for $EDITOR, Ctrl+s to Save)", Style::default().fg(app.theme.text_dim)),
         ]),
         Line::from(""),
     ];
@@ -471,15 +481,23 @@ fn render_edit_modal(f: &mut Frame, app: &App, area: Rect, state: &EditSnippetMo
             let lang_badge = get_language_badge(val);
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(app.theme.primary)),
-                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(format!("{:<28}", label), label_style),
                 Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
                 Span::raw("  "),
                 Span::styled(format!(" {} {} ", lang_badge.icon, lang_badge.name), Style::default().bg(lang_badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)),
             ]));
+        } else if idx == 5 {
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(app.theme.primary)),
+                Span::styled(format!("{:<28}", label), label_style),
+                Span::styled(format!("[ {:^10} ]", if val.is_empty() { "default" } else { val }), val_style),
+                Span::raw("  "),
+                Span::styled("(←/→ or type to select ID format pattern)", Style::default().fg(app.theme.text_dim)),
+            ]));
         } else {
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(app.theme.primary)),
-                Span::styled(format!("{:<26}", label), label_style),
+                Span::styled(format!("{:<28}", label), label_style),
                 Span::styled(if val.is_empty() { if is_focused { "█" } else { "—" } } else { val }, val_style),
             ]));
         }

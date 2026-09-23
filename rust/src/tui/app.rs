@@ -20,8 +20,9 @@ pub struct AddSnippetModalState {
     pub use_case: String,
     pub tags: String,
     pub language: String,
+    pub id_format: String,
     pub code: String,
-    pub focus_idx: usize, // 0..=5
+    pub focus_idx: usize, // 0..=6
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,8 +33,9 @@ pub struct EditSnippetModalState {
     pub use_case: String,
     pub tags: String,
     pub language: String,
+    pub id_format: String,
     pub code: String,
-    pub focus_idx: usize, // 0..=5
+    pub focus_idx: usize, // 0..=6
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -438,12 +440,14 @@ impl App {
 
     pub fn open_add_modal(&mut self) {
         let default_lang = self.config.default_language.clone();
+        let default_fmt = self.config.snippets.default_id_format.clone();
         self.active_modal = Some(ActiveModal::AddSnippet(AddSnippetModalState {
             title: String::new(),
             description: String::new(),
             use_case: String::new(),
             tags: String::new(),
             language: if default_lang.is_empty() { "cpp".to_string() } else { default_lang },
+            id_format: if default_fmt.is_empty() { "default".to_string() } else { default_fmt },
             code: String::new(),
             focus_idx: 0,
         }));
@@ -451,6 +455,11 @@ impl App {
 
     pub fn open_edit_modal(&mut self) {
         if let Some(ref snip) = self.active_snippet {
+            let current_fmt = self.config.snippets.id_formats.keys()
+                .find(|k| snip.id.to_lowercase().starts_with(k.to_lowercase().as_str()))
+                .cloned()
+                .unwrap_or_else(|| self.config.snippets.default_id_format.clone());
+
             self.active_modal = Some(ActiveModal::EditSnippet(EditSnippetModalState {
                 id: snip.id.clone(),
                 title: snip.title.clone(),
@@ -458,6 +467,7 @@ impl App {
                 use_case: snip.use_case.clone(),
                 tags: snip.tags.clone(),
                 language: snip.language.clone(),
+                id_format: current_fmt,
                 code: snip.code.clone(),
                 focus_idx: 0,
             }));
@@ -691,7 +701,7 @@ impl App {
             &state.tags,
             &state.code,
             Some(&state.language),
-            None,
+            if state.id_format.trim().is_empty() { None } else { Some(&state.id_format) },
         ) {
             Ok(id) => {
                 self.set_status_message(format!("Created snippet {} successfully!", id));
