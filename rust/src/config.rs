@@ -233,6 +233,19 @@ pub struct EncryptionConfig {
     pub enabled: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SavedViewConfig {
+    pub name: String,
+    #[serde(default)]
+    pub search: String,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub tag: Option<String>,
+    #[serde(default = "default_sort_by")]
+    pub sort_by: String,
+}
+
 impl Default for EncryptionConfig {
     fn default() -> Self {
         Self { enabled: false }
@@ -251,6 +264,8 @@ pub struct Config {
     pub backups: BackupsConfig,
     pub imports: ImportsConfig,
     pub encryption: EncryptionConfig,
+    #[serde(default)]
+    pub saved_views: Vec<SavedViewConfig>,
 }
 
 impl Default for Config {
@@ -266,6 +281,7 @@ impl Default for Config {
             backups: BackupsConfig::default(),
             imports: ImportsConfig::default(),
             encryption: EncryptionConfig::default(),
+            saved_views: Vec::new(),
         }
     }
 }

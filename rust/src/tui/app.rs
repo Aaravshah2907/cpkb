@@ -9,7 +9,7 @@ use ratatui::layout::Rect;
 use rusqlite::Connection;
 
 use crate::clipboard::copy_to_clipboard;
-use crate::config::{load_config, save_config, Config};
+use crate::config::{load_config, save_config, Config, SavedViewConfig};
 use crate::db::snippets::{add_snippet, delete_snippet, get_snippet, list_snippets, update_snippet, Snippet, SnippetSummary};
 use crate::db::tags::{list_tag_catalog, TagCatalogEntry};
 use crate::tui::syntax::SyntaxHighlighter;
@@ -213,6 +213,13 @@ pub struct ListColumnsModalState {
     pub columns: Vec<(String, bool)>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedViewsModalState {
+    pub selected_idx: usize,
+    pub creating: bool,
+    pub name: String,
+}
+
 pub const LIST_COLUMN_OPTIONS: &[(&str, &str)] = &[
     ("id", "Snippet ID"),
     ("title", "Title"),
@@ -243,6 +250,7 @@ pub enum ActiveModal {
     IdFormats(IdFormatModalState),
     IdFormatBlocked(String),
     ListColumns(ListColumnsModalState),
+    SavedViews(SavedViewsModalState),
 }
 
 
@@ -632,6 +640,53 @@ impl App {
             return false;
         }
         true
+    }
+
+    pub fn open_saved_views_modal(&mut self) {
+        self.active_modal = Some(ActiveModal::SavedViews(SavedViewsModalState { selected_idx: 0, creating: false, name: String::new() }));
+    }
+
+    pub fn save_current_view(&mut self, name: &str) -> bool {
+        let name = name.trim();
+        if name.is_empty() { self.set_status_message("Saved view name cannot be empty".into()); return false; }
+        let view = SavedViewConfig {
+            name: name.to_string(), search: self.search_query.clone(), language: self.language_filter.clone(),
+            tag: self.tag_filter.clone(),
+            sort_by: match self.sort_order { SortOrder::Date => "date", SortOrder::Id => "id", SortOrder::Name => "name" }.to_string(),
+        };
+        let previous = self.config.saved_views.clone();
+        if let Some(existing) = self.config.saved_views.iter_mut().find(|saved| saved.name.eq_ignore_ascii_case(name)) { *existing = view; }
+        else { self.config.saved_views.push(view); }
+        if let Err(error) = save_config(&self.app_dir, &self.config) {
+            self.config.saved_views = previous;
+            self.set_status_message(format!("Could not save view: {}", error));
+            return false;
+        }
+        true
+    }
+
+    pub fn apply_saved_view(&mut self, index: usize, conn: &Connection) {
+        let Some(view) = self.config.saved_views.get(index).cloned() else { return; };
+        self.search_query = view.search;
+        self.language_filter = view.language;
+        self.tag_filter = view.tag;
+        self.sort_order = match view.sort_by.as_str() { "id" => SortOrder::Id, "name" | "title" => SortOrder::Name, _ => SortOrder::Date };
+        self.config.display.sort_by = match self.sort_order { SortOrder::Id => "id", SortOrder::Name => "name", SortOrder::Date => "date" }.to_string();
+        self.search_active = false;
+        self.active_modal = None;
+        self.apply_filter();
+        self.reload_active_snippet(conn);
+        self.set_status_message(format!("Applied saved view: {}", view.name));
+    }
+
+    pub fn delete_saved_view(&mut self, index: usize) {
+        if index >= self.config.saved_views.len() { return; }
+        let previous = self.config.saved_views.clone();
+        let name = self.config.saved_views.remove(index).name;
+        if let Err(error) = save_config(&self.app_dir, &self.config) {
+            self.config.saved_views = previous;
+            self.set_status_message(format!("Could not delete view: {}", error));
+        } else { self.set_status_message(format!("Deleted saved view: {}", name)); }
     }
 
     pub fn open_id_formats_modal(&mut self, conn: &Connection) {

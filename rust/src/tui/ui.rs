@@ -10,7 +10,7 @@ use ratatui::Frame;
 
 use crate::tui::app::{
     ActiveModal, AddSnippetModalState, App, CustomThemeModalState, EditSnippetModalState,
-    SettingsModalState, TagSelectModalState, IdFormatModalState, ListColumnsModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, LIST_COLUMN_OPTIONS, SUPPORTED_LANGUAGES,
+    SettingsModalState, TagSelectModalState, IdFormatModalState, ListColumnsModalState, SavedViewsModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, LIST_COLUMN_OPTIONS, SUPPORTED_LANGUAGES,
 };
 use crate::tui::badges::get_language_badge;
 use crate::tui::theme::{get_available_themes, parse_color, resolve_id_color};
@@ -72,6 +72,7 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
             ActiveModal::TagSelect(state) => render_tag_select_modal(f, app, size, &state),
             ActiveModal::IdFormats(state) => render_id_formats_modal(f, app, size, state),
             ActiveModal::ListColumns(state) => render_list_columns_modal(f, app, size, state),
+            ActiveModal::SavedViews(state) => render_saved_views_modal(f, app, size, state),
             ActiveModal::IdFormatBlocked(message) => render_id_format_blocked(f, app, size, message),
         }
     }
@@ -658,6 +659,31 @@ fn render_list_columns_modal(f: &mut Frame, app: &App, area: Rect, state: &ListC
     f.render_widget(Paragraph::new(lines).block(block), modal);
 }
 
+fn render_saved_views_modal(f: &mut Frame, app: &App, area: Rect, state: &SavedViewsModalState) {
+    let modal = centered_rect(68, 70, area);
+    f.render_widget(Clear, modal);
+    let mut lines = vec![Line::from("Saved combinations of search, filters, and sort order:")];
+    for (idx, view) in app.config.saved_views.iter().enumerate() {
+        let lang = view.language.as_deref().unwrap_or("Any language");
+        let tag = view.tag.as_deref().unwrap_or("Any tag");
+        let description = format!("search: {} • language: {} • tag: {} • sort: {}", if view.search.is_empty() { "(none)" } else { &view.search }, lang, tag, view.sort_by);
+        lines.push(Line::from(vec![
+            Span::styled(if !state.creating && state.selected_idx == idx { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled(format!("{} — ", view.name), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
+            Span::styled(description, Style::default().fg(app.theme.text_dim)),
+        ]));
+    }
+    if app.config.saved_views.is_empty() { lines.push(Line::from(Span::styled("No saved views yet.", Style::default().fg(app.theme.text_dim)))); }
+    if state.creating {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::styled("Name: ", Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)), Span::raw(&state.name), Span::styled("█", Style::default().fg(app.theme.primary))]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(if state.creating { "Type a name • Enter: save • Esc: cancel" } else { "↑/↓ or j/k: select • Enter: apply • s: save current • Delete: remove • Esc: close" }, Style::default().fg(app.theme.text_dim))));
+    let block = Block::default().borders(Borders::ALL).border_type(border_type_from_config(&app.config.display.border_style)).title(" Saved Views ").border_style(app.theme.style_border(true)).style(app.theme.style_surface());
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }).block(block), modal);
+}
+
 fn render_id_formats_modal(f: &mut Frame, app: &App, area: Rect, state: &IdFormatModalState) {
     let modal = centered_rect(82, 78, area);
     f.render_widget(Clear, modal);
@@ -792,7 +818,7 @@ fn render_custom_theme_modal(f: &mut Frame, app: &App, area: Rect, state: &Custo
 
 
 fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
-    let modal_area = centered_rect(65, 70, area);
+    let modal_area = centered_rect(68, 80, area);
     f.render_widget(Clear, modal_area);
 
     let help_text = vec![
@@ -806,6 +832,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![Span::styled("  y / c         ", Style::default().fg(app.theme.secondary)), Span::raw("Copy / Yank selected snippet code to clipboard")]),
         Line::from(vec![Span::styled("  L             ", Style::default().fg(app.theme.accent)), Span::raw("Cycle language filter (All → cpp → python → rust → ...)" )]),
         Line::from(vec![Span::styled("  t             ", Style::default().fg(app.theme.primary)), Span::raw("Open Tag selector modal (filter by tag)")]),
+        Line::from(vec![Span::styled("  v             ", Style::default().fg(app.theme.primary)), Span::raw("Open, apply, or save named filter views")]),
         Line::from(vec![Span::styled("  a             ", Style::default().fg(app.theme.success)), Span::raw("Add a new snippet (modal form / $EDITOR)")]),
         Line::from(vec![Span::styled("  e / Enter     ", Style::default().fg(app.theme.primary)), Span::raw("Edit selected snippet (modal form / $EDITOR)")]),
         Line::from(vec![Span::styled("  Ctrl+e        ", Style::default().fg(app.theme.primary)), Span::raw("Directly open selected snippet in $EDITOR")]),

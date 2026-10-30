@@ -327,6 +327,44 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
                 _ => {}
             },
+            ActiveModal::SavedViews(mut state) => {
+                if state.creating {
+                    match code {
+                        KeyCode::Esc => { state.creating = false; state.name.clear(); app.active_modal = Some(ActiveModal::SavedViews(state)); }
+                        KeyCode::Enter => {
+                            if app.save_current_view(&state.name) {
+                                state.creating = false;
+                                state.name.clear();
+                                state.selected_idx = app.config.saved_views.len().saturating_sub(1);
+                            }
+                            app.active_modal = Some(ActiveModal::SavedViews(state));
+                        }
+                        KeyCode::Backspace => { state.name.pop(); app.active_modal = Some(ActiveModal::SavedViews(state)); }
+                        KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => { state.name.push(c); app.active_modal = Some(ActiveModal::SavedViews(state)); }
+                        _ => {}
+                    }
+                } else {
+                    match code {
+                        KeyCode::Esc => app.active_modal = None,
+                        KeyCode::Char('s') => { state.creating = true; state.name.clear(); app.active_modal = Some(ActiveModal::SavedViews(state)); }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            state.selected_idx = state.selected_idx.saturating_sub(1);
+                            app.active_modal = Some(ActiveModal::SavedViews(state));
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            state.selected_idx = (state.selected_idx + 1).min(app.config.saved_views.len().saturating_sub(1));
+                            app.active_modal = Some(ActiveModal::SavedViews(state));
+                        }
+                        KeyCode::Enter if !app.config.saved_views.is_empty() => app.apply_saved_view(state.selected_idx, conn),
+                        KeyCode::Delete | KeyCode::Backspace if !app.config.saved_views.is_empty() => {
+                            app.delete_saved_view(state.selected_idx);
+                            state.selected_idx = state.selected_idx.min(app.config.saved_views.len().saturating_sub(1));
+                            app.active_modal = Some(ActiveModal::SavedViews(state));
+                        }
+                        _ => {}
+                    }
+                }
+            }
             ActiveModal::Settings(mut state) => {
                 if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e'))
                     || code == KeyCode::Char('e')
@@ -684,6 +722,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
         KeyCode::Char('t') | KeyCode::Char('T') => {
             app.open_tag_modal();
         }
+        KeyCode::Char('v') | KeyCode::Char('V') => app.open_saved_views_modal(),
         KeyCode::Char('d') => {
             app.confirm_delete_current();
         }
