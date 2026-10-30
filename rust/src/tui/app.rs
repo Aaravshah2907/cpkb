@@ -236,6 +236,7 @@ pub struct App {
     pub all_snippets: Vec<SnippetSummary>,
     pub tag_catalog: Vec<TagCatalogEntry>,
     pub tag_suggestion_idx: usize,
+    pub form_cursors: [usize; 7],
     pub filtered_indices: Vec<usize>,
     pub selected_index: usize,
     pub list_state: ListState,
@@ -276,6 +277,7 @@ impl App {
             all_snippets,
             tag_catalog,
             tag_suggestion_idx: 0,
+            form_cursors: [0; 7],
             filtered_indices: Vec::new(),
             selected_index: 0,
             list_state: ListState::default(),
@@ -497,6 +499,7 @@ impl App {
             code: String::new(),
             focus_idx: 0,
         }));
+        self.form_cursors = [0; 7];
     }
 
     pub fn open_edit_modal(&mut self) {
@@ -517,6 +520,15 @@ impl App {
                 code: snip.code.clone(),
                 focus_idx: 0,
             }));
+            self.form_cursors = [
+                snip.title.chars().count(),
+                snip.description.chars().count(),
+                snip.use_case.chars().count(),
+                snip.tags.chars().count(),
+                snip.language.chars().count(),
+                0,
+                snip.code.chars().count(),
+            ];
         }
     }
 

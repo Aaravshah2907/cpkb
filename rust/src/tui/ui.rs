@@ -357,15 +357,37 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_add_modal(f: &mut Frame, app: &App, area: Rect, state: &AddSnippetModalState) {
-    render_snippet_form(f, app, area, state.focus_idx, "Add New Snippet", &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code);
+    render_snippet_form(f, app, area, state.focus_idx, &app.form_cursors, "Add New Snippet", &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code, false);
 }
 
 fn render_edit_modal(f: &mut Frame, app: &App, area: Rect, state: &EditSnippetModalState) {
-    render_snippet_form(f, app, area, state.focus_idx, &format!("Edit Snippet: {}", state.id), &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code);
+    render_snippet_form(f, app, area, state.focus_idx, &app.form_cursors, &format!("Edit Snippet: {}", state.id), &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code, true);
+}
+
+fn text_cursor_location(text: &str, cursor: usize) -> (usize, usize) {
+    let prefix: Vec<char> = text.chars().take(cursor).collect();
+    let line = prefix.iter().filter(|c| **c == '\n').count();
+    let column = prefix.iter().rposition(|c| *c == '\n').map(|idx| prefix.len() - idx - 1).unwrap_or(prefix.len());
+    (line, column)
+}
+
+fn cursor_spans(text: &str, cursor: usize, visible: bool, primary: Color) -> Vec<Span<'static>> {
+    if !visible {
+        return vec![Span::raw(text.to_string())];
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let at = cursor.min(chars.len());
+    let left: String = chars[..at].iter().collect();
+    let right: String = chars[at..].iter().collect();
+    vec![
+        Span::raw(left),
+        Span::styled("▏", Style::default().fg(primary).add_modifier(Modifier::BOLD)),
+        Span::raw(right),
+    ]
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, heading: &str, title: &str, description: &str, use_case: &str, tags: &str, language: &str, id_format: &str, code: &str) {
+fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, cursors: &[usize; 7], heading: &str, title: &str, description: &str, use_case: &str, tags: &str, language: &str, id_format: &str, code: &str, language_editable: bool) {
     let modal_area = centered_rect(92, 94, area);
     f.render_widget(Clear, modal_area);
     let chunks = Layout::default()
@@ -374,6 +396,7 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, headi
         .split(modal_area);
     let mut lines = Vec::new();
     let mut field_rows = [0usize; 7];
+    let mut cursor_rows = [0usize; 7];
     for idx in 0..7 {
         field_rows[idx] = lines.len();
         let active = focus == idx;
@@ -381,17 +404,28 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, headi
         let label_style = if active { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) };
         let value = match idx { 0 => title, 1 => description, 2 => use_case, 3 => tags, 4 => language, 5 => id_format, _ => code };
         if idx == 0 {
-            lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled("Title: ", label_style), Span::raw(value)]));
+            cursor_rows[idx] = field_rows[idx];
+            let mut spans = vec![Span::styled(marker, label_style), Span::styled("Title: ", label_style)];
+            spans.extend(cursor_spans(value, cursors[idx], active, app.theme.primary));
+            lines.push(Line::from(spans));
         } else if idx == 1 || idx == 2 {
             let label_txt = if idx == 1 { "Description" } else { "Use Case" };
             lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled(format!("{label_txt} (Enter for newline):"), label_style)]));
             let content: Vec<&str> = value.split('\n').collect();
+            let (cursor_line, cursor_col) = text_cursor_location(value, cursors[idx]);
+            cursor_rows[idx] = field_rows[idx] + 1 + cursor_line;
             let min_lines = if idx == 1 { 3 } else { 2 };
             for line_idx in 0..content.len().max(min_lines) {
-                lines.push(Line::from(vec![Span::raw("    "), Span::raw(content.get(line_idx).copied().unwrap_or(""))]));
+                let text = content.get(line_idx).copied().unwrap_or("");
+                let mut spans = vec![Span::raw("    ")];
+                spans.extend(cursor_spans(text, cursor_col, active && cursor_line == line_idx, app.theme.primary));
+                lines.push(Line::from(spans));
             }
         } else if idx == 3 {
-            lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled("Tags (comma separated): ", label_style), Span::raw(value)]));
+            cursor_rows[idx] = field_rows[idx];
+            let mut spans = vec![Span::styled(marker, label_style), Span::styled("Tags (comma separated): ", label_style)];
+            spans.extend(cursor_spans(value, cursors[idx], active, app.theme.primary));
+            lines.push(Line::from(spans));
             if active {
                 let suggestions = app.tag_suggestions(value);
                 if suggestions.is_empty() {
@@ -410,22 +444,32 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, headi
             }
         } else if idx == 4 {
             let badge = get_language_badge(language);
-            lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled("Language: ", label_style), Span::raw(language), Span::raw("  "), Span::styled(format!("{} {}", badge.icon, badge.name), Style::default().bg(badge.color).fg(Color::Black).add_modifier(Modifier::BOLD)), Span::raw("  ←/→") ]));
+            let mut spans = vec![Span::styled(marker, label_style), Span::styled("Language: ", label_style)];
+            spans.extend(cursor_spans(language, cursors[idx], active && language_editable, app.theme.primary));
+            spans.extend([Span::raw("  "), Span::styled(format!("{} {}", badge.icon, badge.name), Style::default().bg(badge.color).fg(Color::Black).add_modifier(Modifier::BOLD))]);
+            if !language_editable { spans.push(Span::raw("  ←/→")); }
+            cursor_rows[idx] = field_rows[idx];
+            lines.push(Line::from(spans));
         } else if idx == 5 {
             lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled("ID Format: ", label_style), Span::raw(id_format), Span::raw("  ←/→") ]));
         } else {
             lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled(format!("Code ({} lines; Enter for newline):", code.lines().count().max(1)), label_style)]));
             let code_lines: Vec<&str> = code.split('\n').collect();
+            let (cursor_line, cursor_col) = text_cursor_location(code, cursors[idx]);
+            cursor_rows[idx] = field_rows[idx] + 1 + cursor_line;
             for line_idx in 0..code_lines.len().max(12) {
-                lines.push(Line::from(vec![Span::styled(format!("{:>3} │ ", line_idx + 1), Style::default().fg(app.theme.text_dim)), Span::raw(code_lines.get(line_idx).copied().unwrap_or(""))]));
+                let text = code_lines.get(line_idx).copied().unwrap_or("");
+                let mut spans = vec![Span::styled(format!("{:>3} │ ", line_idx + 1), Style::default().fg(app.theme.text_dim))];
+                spans.extend(cursor_spans(text, cursor_col, active && cursor_line == line_idx, app.theme.primary));
+                lines.push(Line::from(spans));
             }
         }
     }
     let inner_height = chunks[0].height.saturating_sub(2) as usize;
-    let scroll = if focus == 6 { lines.len().saturating_sub(inner_height) } else { field_rows[focus].saturating_sub(1) };
+    let scroll = cursor_rows[focus].saturating_sub(inner_height / 2);
     let p = Paragraph::new(lines).scroll((scroll as u16, 0)).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(Span::styled(heading, Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD))).border_style(app.theme.style_border(true)).style(app.theme.style_surface()));
     f.render_widget(p, chunks[0]);
-    let controls = "Tab: next field • Enter: newline / advance\nCtrl+S: save • Ctrl+E: editor • Esc: cancel\nTags: ↑/↓ • Language / ID Format: ←/→";
+    let controls = "Text: ←/→ cursor • ↑/↓ line • Home/End line edge\nTab: next field • Enter: newline / advance • Backspace/Delete\nCtrl+S: save • Ctrl+E: editor • Esc: cancel • Tags: ↑/↓";
     f.render_widget(Paragraph::new(controls).alignment(Alignment::Center).style(app.theme.style_surface()), chunks[1]);
 }
 

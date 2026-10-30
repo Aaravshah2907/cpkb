@@ -1,18 +1,19 @@
-# CPKB Project — Status & Roadmap
+# CPKB TUI Roadmap
 
-## Completed in v3.0.x (Rust Native Edition)
+This file tracks proposed work that is not implemented yet. Priorities favor frequent editing and navigation tasks first.
 
-- [x] **Full Rust Port (v3.0.0)**: Native Ratatui TUI and Clap CLI with SQLite backend. Zero Python runtime dependency.
-- [x] **Database Deduplication**: Cleaned up 78 redundant/duplicate snippets from test re-imports with full data backups preserved.
-- [x] **Custom Theme Color Editor**: In-TUI modal to customize all 11 hex color slots with live swatches (`●`/`✖`).
-- [x] **Layout & Border Styles**: Horizontal/vertical pane toggle and 4 border styles (rounded, solid, double, thick) persisted in `config.json`.
-- [x] **Natural Sorting**: Sort by snippet ID (`CP2 < CP10`), snippet name, or date.
-- [x] **Quick Yank (`y`/`c`)**: Directly copy code from list in TUI with toast feedback.
-- [x] **Language Filter (`L`)**: Cycle active languages in TUI with list title badge (`[Lang: cpp]`).
-- [x] **Tag Selector Modal (`t`)**: Pop-up modal listing all distinct tags with counts to quickly filter snippets.
-- [x] **JSON Output**: `--json` flag on `cpkb list`, `cpkb search`, `cpkb show` for editor/scripting integration.
-- [x] **Shell Auto-installer**: `cpkb install-completions` dynamically detects shell (zsh/bash/fish) and installs completions.
-- [x] **Optional Query**: `cpkb query` works with or without arguments for `fzf` piping.
-- [x] **Automated Release Script**: `./scripts/release.sh [--dry-run] <version>` with Homebrew tap synchronization.
-- [x] **Update All docs regarding python to rust change:** We need to update all of the appropriate docs as soon as possible.
-- [x] **ID Format selector in Add/Edit View**: Add dropdown support for selecting/changing snippet ID format in TUI add and edit modal views.
+## Priority 1 — Editing and daily workflow
+
+- [ ] **Tag completion with Tab:** Let Tab accept the currently highlighted tag suggestion when the tag dropdown is open, while preserving Tab field navigation when it is closed.
+- [ ] **ID format preview and default selection:** Show the next ID each format would generate and let users set the default directly in the TUI manager.
+
+## Priority 2 — Better browsing
+
+- [ ] **Mouse selection in tag picker:** Let users click a tag row to select it and click again to apply it. Mouse-wheel selection and keyboard scrolling are already implemented.
+- [ ] **List density and columns:** Offer compact and detailed list layouts, plus configurable visible columns.
+- [ ] **Saved views:** Let users save and recall named combinations of search terms, language filters, tag filters, and sort order.
+
+## Priority 3 — Preview and customization
+
+- [ ] **Live edit preview:** Add an optional split preview while editing, with rendered Markdown for Markdown snippets and syntax-highlighted code for source snippets.
+- [ ] **TUI keybinding editor:** Let users customize supported keybindings in Settings, with duplicate/conflict checks and a way to restore defaults.

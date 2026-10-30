@@ -20,7 +20,7 @@ use rusqlite::Connection;
 
 use crate::cli::editor::{open_snippet_creator, open_snippet_editor};
 use crate::db::snippets::{add_snippet, update_snippet};
-use crate::tui::app::{ActiveModal, App, SUPPORTED_LANGUAGES};
+use crate::tui::app::{ActiveModal, AddSnippetModalState, App, EditSnippetModalState, SUPPORTED_LANGUAGES};
 use crate::tui::theme::get_available_themes;
 use crate::tui::ui::render_ui;
 
@@ -88,6 +88,101 @@ fn move_tag_selection(app: &mut App, delta: isize) {
             app.active_modal = Some(ActiveModal::TagSelect(state));
         }
     }
+}
+
+fn add_text_field(state: &mut AddSnippetModalState, idx: usize) -> Option<&mut String> {
+    match idx {
+        0 => Some(&mut state.title),
+        1 => Some(&mut state.description),
+        2 => Some(&mut state.use_case),
+        3 => Some(&mut state.tags),
+        6 => Some(&mut state.code),
+        _ => None,
+    }
+}
+
+fn edit_text_field(state: &mut EditSnippetModalState, idx: usize) -> Option<&mut String> {
+    match idx {
+        0 => Some(&mut state.title),
+        1 => Some(&mut state.description),
+        2 => Some(&mut state.use_case),
+        3 => Some(&mut state.tags),
+        4 => Some(&mut state.language),
+        6 => Some(&mut state.code),
+        _ => None,
+    }
+}
+
+fn handle_cursor_key(value: &mut String, cursor: &mut usize, field_idx: usize, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    let multiline = matches!(field_idx, 1 | 2 | 6);
+    *cursor = (*cursor).min(value.chars().count());
+    match code {
+        KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            let byte = value.char_indices().nth(*cursor).map(|(i, _)| i).unwrap_or(value.len());
+            value.insert(byte, c);
+            *cursor += 1;
+            true
+        }
+        KeyCode::Backspace => {
+            if *cursor > 0 {
+                let start = value.char_indices().nth(*cursor - 1).map(|(i, _)| i).unwrap();
+                let end = value.char_indices().nth(*cursor).map(|(i, _)| i).unwrap_or(value.len());
+                value.replace_range(start..end, "");
+                *cursor -= 1;
+            }
+            true
+        }
+        KeyCode::Delete => {
+            if let Some(start) = value.char_indices().nth(*cursor).map(|(i, _)| i) {
+                let end = value.char_indices().nth(*cursor + 1).map(|(i, _)| i).unwrap_or(value.len());
+                value.replace_range(start..end, "");
+            }
+            true
+        }
+        KeyCode::Left => { *cursor = cursor.saturating_sub(1); true }
+        KeyCode::Right => { *cursor = (*cursor + 1).min(value.chars().count()); true }
+        KeyCode::Home => {
+            let before = value.chars().take(*cursor).collect::<String>();
+            *cursor = before.rfind('\n').map(|idx| before[..idx].chars().count() + 1).unwrap_or(0);
+            true
+        }
+        KeyCode::End => {
+            let before = value.chars().take(*cursor).collect::<String>();
+            let line_len = value.chars().skip(*cursor).take_while(|c| *c != '\n').count();
+            *cursor += line_len;
+            if before.is_empty() { *cursor = line_len; }
+            true
+        }
+        KeyCode::Up if multiline => { move_cursor_vertical(value, cursor, -1); true }
+        KeyCode::Down if multiline => { move_cursor_vertical(value, cursor, 1); true }
+        KeyCode::Enter if multiline => {
+            let byte = value.char_indices().nth(*cursor).map(|(i, _)| i).unwrap_or(value.len());
+            value.insert(byte, '\n');
+            *cursor += 1;
+            true
+        }
+        _ => false,
+    }
+}
+
+fn move_cursor_vertical(value: &str, cursor: &mut usize, delta: isize) {
+    let chars: Vec<char> = value.chars().collect();
+    let current = (*cursor).min(chars.len());
+    let line_start = chars[..current].iter().rposition(|c| *c == '\n').map(|i| i + 1).unwrap_or(0);
+    let column = current - line_start;
+    let line_end = chars[current..].iter().position(|c| *c == '\n').map(|i| current + i).unwrap_or(chars.len());
+    let (target_start, target_end) = if delta < 0 {
+        if line_start == 0 { return; }
+        let end = line_start - 1;
+        let start = chars[..end].iter().rposition(|c| *c == '\n').map(|i| i + 1).unwrap_or(0);
+        (start, end)
+    } else {
+        if line_end == chars.len() { return; }
+        let start = line_end + 1;
+        let end = chars[start..].iter().position(|c| *c == '\n').map(|i| start + i).unwrap_or(chars.len());
+        (start, end)
+    };
+    *cursor = target_start + column.min(target_end - target_start);
 }
 
 fn handle_key_event<B: ratatui::backend::Backend>(
@@ -319,6 +414,14 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     app.save_new_snippet(conn, state);
                     return Ok(());
                 }
+                let field_idx = state.focus_idx;
+                if let Some(field) = add_text_field(&mut state, field_idx) {
+                    if handle_cursor_key(field, &mut app.form_cursors[field_idx], field_idx, code, modifiers) {
+                        if field_idx == 3 { app.tag_suggestion_idx = 0; }
+                        app.active_modal = Some(ActiveModal::AddSnippet(state));
+                        return Ok(());
+                    }
+                }
 
                 match code {
                     KeyCode::Esc => {
@@ -328,17 +431,14 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.tag_suggestion_idx = app.tag_suggestion_idx.saturating_sub(1);
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
-                    KeyCode::Down if state.focus_idx == 3 => {
+                    KeyCode::Down if state.focus_idx == 3 && !app.tag_suggestions(&state.tags).is_empty() => {
                         let count = app.tag_suggestions(&state.tags).len();
                         if count > 0 { app.tag_suggestion_idx = (app.tag_suggestion_idx + 1) % count; }
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
                     KeyCode::Enter if state.focus_idx == 3 => {
                         app.complete_tag(&mut state.tags);
-                        app.active_modal = Some(ActiveModal::AddSnippet(state));
-                    }
-                    KeyCode::Enter if state.focus_idx == 1 || state.focus_idx == 2 || state.focus_idx == 6 => {
-                        match state.focus_idx { 1 => state.description.push('\n'), 2 => state.use_case.push('\n'), _ => state.code.push('\n') }
+                        app.form_cursors[3] = state.tags.chars().count();
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
                     KeyCode::Enter => { state.focus_idx = (state.focus_idx + 1) % 7; app.active_modal = Some(ActiveModal::AddSnippet(state)); }
@@ -370,34 +470,6 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         state.language = SUPPORTED_LANGUAGES[next].to_string();
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
-                    KeyCode::Backspace if state.focus_idx != 4 => {
-                        let target = match state.focus_idx {
-                            0 => &mut state.title,
-                            1 => &mut state.description,
-                            2 => &mut state.use_case,
-                            3 => &mut state.tags,
-                            4 => &mut state.language,
-                            5 => &mut state.id_format,
-                            _ => &mut state.code,
-                        };
-                        target.pop();
-                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
-                        app.active_modal = Some(ActiveModal::AddSnippet(state));
-                    }
-                    KeyCode::Char(c) if state.focus_idx != 4 => {
-                        let target = match state.focus_idx {
-                            0 => &mut state.title,
-                            1 => &mut state.description,
-                            2 => &mut state.use_case,
-                            3 => &mut state.tags,
-                            4 => &mut state.language,
-                            5 => &mut state.id_format,
-                            _ => &mut state.code,
-                        };
-                        target.push(c);
-                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
-                        app.active_modal = Some(ActiveModal::AddSnippet(state));
-                    }
                     _ => {}
                 }
             }
@@ -411,6 +483,14 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     app.save_edited_snippet(conn, state);
                     return Ok(());
                 }
+                let field_idx = state.focus_idx;
+                if let Some(field) = edit_text_field(&mut state, field_idx) {
+                    if handle_cursor_key(field, &mut app.form_cursors[field_idx], field_idx, code, modifiers) {
+                        if field_idx == 3 { app.tag_suggestion_idx = 0; }
+                        app.active_modal = Some(ActiveModal::EditSnippet(state));
+                        return Ok(());
+                    }
+                }
 
                 match code {
                     KeyCode::Esc => {
@@ -420,17 +500,14 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.tag_suggestion_idx = app.tag_suggestion_idx.saturating_sub(1);
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
-                    KeyCode::Down if state.focus_idx == 3 => {
+                    KeyCode::Down if state.focus_idx == 3 && !app.tag_suggestions(&state.tags).is_empty() => {
                         let count = app.tag_suggestions(&state.tags).len();
                         if count > 0 { app.tag_suggestion_idx = (app.tag_suggestion_idx + 1) % count; }
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
                     KeyCode::Enter if state.focus_idx == 3 => {
                         app.complete_tag(&mut state.tags);
-                        app.active_modal = Some(ActiveModal::EditSnippet(state));
-                    }
-                    KeyCode::Enter if state.focus_idx == 1 || state.focus_idx == 2 || state.focus_idx == 6 => {
-                        match state.focus_idx { 1 => state.description.push('\n'), 2 => state.use_case.push('\n'), _ => state.code.push('\n') }
+                        app.form_cursors[3] = state.tags.chars().count();
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
                     KeyCode::Enter => { state.focus_idx = (state.focus_idx + 1) % 7; app.active_modal = Some(ActiveModal::EditSnippet(state)); }
@@ -454,34 +531,6 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             };
                             state.id_format = available_formats[next_idx].clone();
                         }
-                        app.active_modal = Some(ActiveModal::EditSnippet(state));
-                    }
-                    KeyCode::Backspace => {
-                        let target = match state.focus_idx {
-                            0 => &mut state.title,
-                            1 => &mut state.description,
-                            2 => &mut state.use_case,
-                            3 => &mut state.tags,
-                            4 => &mut state.language,
-                            5 => &mut state.id_format,
-                            _ => &mut state.code,
-                        };
-                        target.pop();
-                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
-                        app.active_modal = Some(ActiveModal::EditSnippet(state));
-                    }
-                    KeyCode::Char(c) => {
-                        let target = match state.focus_idx {
-                            0 => &mut state.title,
-                            1 => &mut state.description,
-                            2 => &mut state.use_case,
-                            3 => &mut state.tags,
-                            4 => &mut state.language,
-                            5 => &mut state.id_format,
-                            _ => &mut state.code,
-                        };
-                        target.push(c);
-                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
                     _ => {}
