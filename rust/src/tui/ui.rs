@@ -479,9 +479,51 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, curso
     let inner_height = chunks[0].height.saturating_sub(2) as usize;
     let scroll = cursor_rows[focus].saturating_sub(inner_height / 2);
     let p = Paragraph::new(lines).scroll((scroll as u16, 0)).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(Span::styled(heading, Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD))).border_style(app.theme.style_border(true)).style(app.theme.style_surface()));
-    f.render_widget(p, chunks[0]);
-    let controls = "Text: ←/→ cursor • ↑/↓ line • Home/End line edge\nTab: next field / complete tag • Enter: newline / advance\nCtrl+S: save • Ctrl+E: editor • Esc: cancel • Tags: ↑/↓";
+    if app.form_preview {
+        let panes = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage(56), Constraint::Percentage(44)]).split(chunks[0]);
+        f.render_widget(p, panes[0]);
+        render_live_edit_preview(f, app, panes[1], title, description, use_case, language, code);
+    } else {
+        f.render_widget(p, chunks[0]);
+    }
+    let controls = "Text: ←/→ cursor • ↑/↓ line • Home/End edge\nTab: next field / complete tag • Enter: newline / advance\nCtrl+P: preview • Ctrl+S: save • Ctrl+E: editor • Esc: cancel";
     f.render_widget(Paragraph::new(controls).alignment(Alignment::Center).style(app.theme.style_surface()), chunks[1]);
+}
+
+fn render_live_edit_preview(f: &mut Frame, app: &App, area: Rect, title: &str, description: &str, use_case: &str, language: &str, code: &str) {
+    let markdown = matches!(language.trim().to_lowercase().as_str(), "markdown" | "md");
+    let mut lines = Vec::new();
+    if !title.trim().is_empty() { lines.push(Line::from(Span::styled(title.to_string(), Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD)))); }
+    if !description.trim().is_empty() { lines.push(Line::from(Span::styled(description.to_string(), Style::default().fg(app.theme.text_dim)))); }
+    if !use_case.trim().is_empty() { lines.push(Line::from(Span::styled(format!("Use case: {use_case}"), Style::default().fg(app.theme.secondary)))); }
+    lines.push(Line::from(""));
+    if markdown {
+        let mut in_code = false;
+        for source_line in code.lines() {
+            if source_line.trim_start().starts_with("```") { in_code = !in_code; continue; }
+            if in_code {
+                lines.push(Line::from(Span::styled(source_line.to_string(), Style::default().fg(app.theme.success))));
+            } else if let Some(heading) = source_line.strip_prefix("### ") {
+                lines.push(Line::from(Span::styled(heading.to_string(), Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD))));
+            } else if let Some(heading) = source_line.strip_prefix("## ") {
+                lines.push(Line::from(Span::styled(heading.to_string(), Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD))));
+            } else if let Some(heading) = source_line.strip_prefix("# ") {
+                lines.push(Line::from(Span::styled(heading.to_string(), Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD | Modifier::UNDERLINED))));
+            } else if let Some(item) = source_line.strip_prefix("- ").or_else(|| source_line.strip_prefix("* ")) {
+                lines.push(Line::from(vec![Span::styled("• ", Style::default().fg(app.theme.accent)), Span::raw(item.to_string())]));
+            } else if let Some(quote) = source_line.strip_prefix("> ") {
+                lines.push(Line::from(Span::styled(format!("│ {quote}"), Style::default().fg(app.theme.text_dim).add_modifier(Modifier::ITALIC))));
+            } else {
+                lines.push(Line::from(source_line.to_string()));
+            }
+        }
+    } else {
+        lines.extend(app.highlighter.highlight(code, language));
+    }
+    if lines.len() <= 4 && code.trim().is_empty() { lines.push(Line::from(Span::styled("Code preview appears here as you type.", Style::default().fg(app.theme.text_dim)))); }
+    let title = if markdown { " Markdown Preview " } else { " Code Preview " };
+    let block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(Span::styled(title, Style::default().fg(app.theme.secondary).add_modifier(Modifier::BOLD))).border_style(app.theme.style_border(false)).style(app.theme.style_surface());
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).block(block), area);
 }
 
 fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsModalState) {

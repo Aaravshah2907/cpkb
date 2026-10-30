@@ -261,6 +261,7 @@ pub struct App {
     pub tag_catalog: Vec<TagCatalogEntry>,
     pub tag_suggestion_idx: usize,
     pub form_cursors: [usize; 7],
+    pub form_preview: bool,
     pub id_format_previews: std::collections::BTreeMap<String, String>,
     pub tag_list_area: Option<Rect>,
     pub tag_list_offset: usize,
@@ -306,6 +307,7 @@ impl App {
             tag_catalog,
             tag_suggestion_idx: 0,
             form_cursors: [0; 7],
+            form_preview: false,
             id_format_previews: std::collections::BTreeMap::new(),
             tag_list_area: None,
             tag_list_offset: 0,
@@ -529,6 +531,7 @@ impl App {
     }
 
     pub fn open_add_modal(&mut self) {
+        self.form_preview = false;
         let default_lang = self.config.default_language.clone();
         let default_fmt = self.config.snippets.default_id_format.clone();
         self.active_modal = Some(ActiveModal::AddSnippet(AddSnippetModalState {
@@ -546,6 +549,7 @@ impl App {
 
     pub fn open_edit_modal(&mut self) {
         if let Some(ref snip) = self.active_snippet {
+            self.form_preview = false;
             let current_fmt = self.config.snippets.id_formats.keys()
                 .find(|k| snip.id.to_lowercase().starts_with(k.to_lowercase().as_str()))
                 .cloned()

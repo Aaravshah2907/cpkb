@@ -504,6 +504,11 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
             }
             ActiveModal::AddSnippet(mut state) => {
+                if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('p') {
+                    app.form_preview = !app.form_preview;
+                    app.active_modal = Some(ActiveModal::AddSnippet(state));
+                    return Ok(());
+                }
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e') {
                     // Launch $EDITOR for new snippet
                     launch_editor_add(terminal, app, conn)?;
@@ -578,6 +583,11 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
             }
             ActiveModal::EditSnippet(mut state) => {
+                if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('p') {
+                    app.form_preview = !app.form_preview;
+                    app.active_modal = Some(ActiveModal::EditSnippet(state));
+                    return Ok(());
+                }
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e') {
                     // Launch $EDITOR for editing snippet
                     launch_editor_edit(terminal, app, conn)?;
