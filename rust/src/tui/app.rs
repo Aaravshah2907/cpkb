@@ -207,6 +207,19 @@ pub struct IdFormatModalState {
     pub previews: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListColumnsModalState {
+    pub selected_idx: usize,
+    pub columns: Vec<(String, bool)>,
+}
+
+pub const LIST_COLUMN_OPTIONS: &[(&str, &str)] = &[
+    ("id", "Snippet ID"),
+    ("title", "Title"),
+    ("language", "Language"),
+    ("tags", "Tags"),
+];
+
 pub const SUPPORTED_LANGUAGES: &[&str] = &[
     "cpp", "c", "python", "rust", "tex", "javascript", "typescript", "go", "java", "kotlin", "lua", "bash",
     "markdown", "sql", "html", "css", "json", "yaml", "toml", "swift", "ruby", "php", "zig", "text",
@@ -229,6 +242,7 @@ pub enum ActiveModal {
     TagSelect(TagSelectModalState),
     IdFormats(IdFormatModalState),
     IdFormatBlocked(String),
+    ListColumns(ListColumnsModalState),
 }
 
 
@@ -585,6 +599,39 @@ impl App {
             border_idx,
             focus_idx: 0,
         }));
+    }
+
+    pub fn open_list_columns_modal(&mut self) {
+        let columns = LIST_COLUMN_OPTIONS.iter().map(|(key, _)| {
+            (key.to_string(), self.config.display.list_columns.iter().any(|value| value == key))
+        }).collect();
+        self.active_modal = Some(ActiveModal::ListColumns(ListColumnsModalState { selected_idx: 0, columns }));
+    }
+
+    pub fn set_list_density(&mut self, density: &str) {
+        if !matches!(density, "compact" | "detailed") { return; }
+        let previous = self.config.display.list_density.clone();
+        self.config.display.list_density = density.to_string();
+        if let Err(error) = save_config(&self.app_dir, &self.config) {
+            self.config.display.list_density = previous;
+            self.set_status_message(format!("Could not save list density: {}", error));
+        }
+    }
+
+    pub fn save_list_columns(&mut self, columns: Vec<(String, bool)>) -> bool {
+        let selected: Vec<String> = columns.iter().filter(|(_, enabled)| *enabled).map(|(key, _)| key.clone()).collect();
+        if selected.is_empty() {
+            self.set_status_message("Keep at least one snippet list column visible".into());
+            return false;
+        }
+        let previous = self.config.display.list_columns.clone();
+        self.config.display.list_columns = selected;
+        if let Err(error) = save_config(&self.app_dir, &self.config) {
+            self.config.display.list_columns = previous;
+            self.set_status_message(format!("Could not save list columns: {}", error));
+            return false;
+        }
+        true
     }
 
     pub fn open_id_formats_modal(&mut self, conn: &Connection) {

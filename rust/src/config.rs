@@ -46,6 +46,14 @@ fn default_sort_by() -> String {
     "date".to_string()
 }
 
+fn default_list_density() -> String {
+    "detailed".to_string()
+}
+
+fn default_list_columns() -> Vec<String> {
+    vec!["id".to_string(), "title".to_string(), "language".to_string(), "tags".to_string()]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DisplayConfig {
     pub theme: String,
@@ -55,6 +63,10 @@ pub struct DisplayConfig {
     pub border_style: String,
     #[serde(default = "default_sort_by")]
     pub sort_by: String,
+    #[serde(default = "default_list_density")]
+    pub list_density: String,
+    #[serde(default = "default_list_columns")]
+    pub list_columns: Vec<String>,
     pub custom_theme: CustomTheme,
 }
 
@@ -67,6 +79,8 @@ impl Default for DisplayConfig {
             layout: "horizontal".to_string(),
             border_style: "solid".to_string(),
             sort_by: "date".to_string(),
+            list_density: default_list_density(),
+            list_columns: default_list_columns(),
             custom_theme: CustomTheme::default(),
         }
     }

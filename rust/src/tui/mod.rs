@@ -307,6 +307,26 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
                 _ => {}
             },
+            ActiveModal::ListColumns(mut state) => match code {
+                KeyCode::Esc => app.open_settings_modal(),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    state.selected_idx = if state.selected_idx == 0 { state.columns.len().saturating_sub(1) } else { state.selected_idx - 1 };
+                    app.active_modal = Some(ActiveModal::ListColumns(state));
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !state.columns.is_empty() { state.selected_idx = (state.selected_idx + 1) % state.columns.len(); }
+                    app.active_modal = Some(ActiveModal::ListColumns(state));
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    if state.selected_idx < state.columns.len() {
+                        let mut columns = state.columns.clone();
+                        columns[state.selected_idx].1 = !columns[state.selected_idx].1;
+                        if app.save_list_columns(columns.clone()) { state.columns = columns; }
+                    }
+                    app.active_modal = Some(ActiveModal::ListColumns(state));
+                }
+                _ => {}
+            },
             ActiveModal::Settings(mut state) => {
                 if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e'))
                     || code == KeyCode::Char('e')
@@ -326,11 +346,11 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                        state.focus_idx = (state.focus_idx + 1) % 7;
+                        state.focus_idx = (state.focus_idx + 1) % 9;
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
-                        state.focus_idx = if state.focus_idx == 0 { 6 } else { state.focus_idx - 1 };
+                        state.focus_idx = if state.focus_idx == 0 { 8 } else { state.focus_idx - 1 };
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
@@ -361,6 +381,8 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                                 state.border_idx = if state.border_idx == 0 { 3 } else { state.border_idx - 1 };
                             }
                             6 => { app.open_id_formats_modal(conn); return Ok(()); }
+                            7 => { app.set_list_density("compact"); }
+                            8 => { app.open_list_columns_modal(); return Ok(()); }
                             _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
@@ -385,6 +407,8 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                                 state.border_idx = (state.border_idx + 1) % 4;
                             }
                             6 => { app.open_id_formats_modal(conn); return Ok(()); }
+                            7 => { app.set_list_density("detailed"); }
+                            8 => { app.open_list_columns_modal(); return Ok(()); }
                             _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
@@ -394,6 +418,8 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             app.open_custom_theme_modal();
                         } else if state.focus_idx == 6 {
                             app.open_id_formats_modal(conn);
+                        } else if state.focus_idx == 8 {
+                            app.open_list_columns_modal();
                         } else {
                             app.save_settings(state);
                         }

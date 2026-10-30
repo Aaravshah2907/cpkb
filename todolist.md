@@ -3,7 +3,6 @@
 This file tracks proposed work that is not implemented yet. Priorities favor frequent editing and navigation tasks first.
 
 ## Priority 1 — Better browsing
-- [ ] **List density and columns:** Offer compact and detailed list layouts, plus configurable visible columns.
 - [ ] **Saved views:** Let users save and recall named combinations of search terms, language filters, tag filters, and sort order.
 
 ## Priority 2 — Preview and customization

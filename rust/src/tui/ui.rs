@@ -10,7 +10,7 @@ use ratatui::Frame;
 
 use crate::tui::app::{
     ActiveModal, AddSnippetModalState, App, CustomThemeModalState, EditSnippetModalState,
-    SettingsModalState, TagSelectModalState, IdFormatModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, SUPPORTED_LANGUAGES,
+    SettingsModalState, TagSelectModalState, IdFormatModalState, ListColumnsModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, LIST_COLUMN_OPTIONS, SUPPORTED_LANGUAGES,
 };
 use crate::tui::badges::get_language_badge;
 use crate::tui::theme::{get_available_themes, parse_color, resolve_id_color};
@@ -71,6 +71,7 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
             ActiveModal::CustomTheme(state) => render_custom_theme_modal(f, app, size, &state),
             ActiveModal::TagSelect(state) => render_tag_select_modal(f, app, size, &state),
             ActiveModal::IdFormats(state) => render_id_formats_modal(f, app, size, state),
+            ActiveModal::ListColumns(state) => render_list_columns_modal(f, app, size, state),
             ActiveModal::IdFormatBlocked(message) => render_id_format_blocked(f, app, size, message),
         }
     }
@@ -189,32 +190,35 @@ fn render_snippet_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(id_color)
             };
 
-            let line1 = Line::from(vec![
-                Span::styled(prefix, Style::default().fg(primary)),
-                Span::styled(format!("{:<8} ", snip.id), id_style),
-                Span::styled(format!("{} ", badge.icon), Style::default().fg(badge.color)),
-                Span::styled(&snip.title, title_style),
-            ]);
-
             let tag_str = if snip.tags.is_empty() {
                 "—".to_string()
             } else {
                 snip.tags.clone()
             };
-
-            let line2 = Line::from(vec![
-                Span::raw("    "),
-                Span::styled(format!("{:<7} ", badge.name), Style::default().fg(badge.color).add_modifier(Modifier::DIM)),
-                Span::styled(format!("Tags: {}", tag_str), Style::default().fg(app.theme.text_dim)),
-            ]);
-
-            let item_style = if is_selected {
-                app.theme.style_surface()
+            let has_column = |name: &str| app.config.display.list_columns.iter().any(|column| column == name);
+            let mut primary_spans = vec![Span::styled(prefix, Style::default().fg(primary))];
+            if has_column("id") { primary_spans.push(Span::styled(format!("{:<8} ", snip.id), id_style)); }
+            if has_column("language") && app.config.display.list_density != "compact" { primary_spans.push(Span::styled(format!("{} ", badge.icon), Style::default().fg(badge.color))); }
+            if has_column("title") { primary_spans.push(Span::styled(&snip.title, title_style)); }
+            if app.config.display.list_density == "compact" {
+                let mut spans = primary_spans;
+                let mut metadata = Vec::new();
+                if has_column("language") { metadata.push(badge.name.to_string()); }
+                if has_column("tags") && !snip.tags.is_empty() { metadata.push(format!("{}", tag_str)); }
+                if !metadata.is_empty() {
+                    spans.push(Span::styled(format!("  [{}]", metadata.join(" · ")), Style::default().fg(app.theme.text_dim)));
+                }
+                let line = Line::from(spans);
+                let item_style = if is_selected { app.theme.style_surface() } else { Style::default() };
+                ListItem::new(line).style(item_style)
             } else {
-                Style::default()
-            };
-
-            ListItem::new(vec![line1, line2]).style(item_style)
+                let line1 = Line::from(primary_spans);
+                let mut secondary_spans = vec![Span::raw("    ")];
+                if has_column("language") { secondary_spans.push(Span::styled(format!("{:<7} ", badge.name), Style::default().fg(badge.color).add_modifier(Modifier::DIM))); }
+                if has_column("tags") { secondary_spans.push(Span::styled(format!("Tags: {}", tag_str), Style::default().fg(app.theme.text_dim))); }
+                let item_style = if is_selected { app.theme.style_surface() } else { Style::default() };
+                ListItem::new(if secondary_spans.len() > 1 { vec![line1, Line::from(secondary_spans)] } else { vec![line1] }).style(item_style)
+            }
         })
         .collect();
 
@@ -480,7 +484,7 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, curso
 }
 
 fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsModalState) {
-    let modal_area = centered_rect(68, 75, area);
+    let modal_area = centered_rect(78, 90, area);
     f.render_widget(Clear, modal_area);
 
     let available_themes = get_available_themes(Some(&app.config.display.custom_theme));
@@ -495,6 +499,8 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
     let border_focused = state.focus_idx == 4;
     let custom_focused = state.focus_idx == 5;
     let formats_focused = state.focus_idx == 6;
+    let density_focused = state.focus_idx == 7;
+    let columns_focused = state.focus_idx == 8;
 
     let sort_name = match state.sort_idx {
         1 => "Snippet ID",
@@ -503,6 +509,8 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
     };
     let layout_name = LAYOUT_OPTIONS[state.layout_idx.min(LAYOUT_OPTIONS.len() - 1)].1;
     let border_name = BORDER_OPTIONS[state.border_idx.min(BORDER_OPTIONS.len() - 1)].1;
+    let density_name = if app.config.display.list_density == "compact" { "Compact" } else { "Detailed" };
+    let visible_columns = app.config.display.list_columns.iter().filter_map(|key| LIST_COLUMN_OPTIONS.iter().find(|(option, _)| option == key).map(|(_, label)| *label)).collect::<Vec<_>>().join(", ");
 
     let mut lines = vec![
         Line::from(vec![
@@ -573,6 +581,16 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
             Span::styled("Manage Snippet ID Formats", if formats_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
             Span::styled("  [Enter / ← / →]", Style::default().fg(app.theme.secondary)),
         ]),
+        Line::from(vec![
+            Span::styled(if density_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled("Snippet List Density: ", if density_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
+            Span::styled(format!("{}  [← / →]", density_name), Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled(if columns_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled("Visible List Columns: ", if columns_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
+            Span::styled(format!("{}  [Enter]", visible_columns), Style::default().fg(app.theme.text)),
+        ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("Config Storage:    ", Style::default().fg(app.theme.text_dim)),
@@ -607,7 +625,9 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
     ]));
 
     let bt = border_type_from_config(&app.config.display.border_style);
+    let scroll = state.focus_idx.saturating_mul(2).saturating_sub(5) as u16;
     let p = Paragraph::new(lines)
+        .scroll((scroll, 0))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -618,6 +638,24 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
         );
 
     f.render_widget(p, modal_area);
+}
+
+fn render_list_columns_modal(f: &mut Frame, app: &App, area: Rect, state: &ListColumnsModalState) {
+    let modal = centered_rect(54, 48, area);
+    f.render_widget(Clear, modal);
+    let mut lines = vec![Line::from("Choose which fields appear in the snippet list:")];
+    for (idx, (key, enabled)) in state.columns.iter().enumerate() {
+        let label = LIST_COLUMN_OPTIONS.iter().find(|(option, _)| option == key).map(|(_, label)| *label).unwrap_or(key);
+        lines.push(Line::from(vec![
+            Span::styled(if state.selected_idx == idx { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled(if *enabled { "[x] " } else { "[ ] " }, Style::default().fg(if *enabled { app.theme.success } else { app.theme.text_dim })),
+            Span::styled(label, if state.selected_idx == idx { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text) }),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("↑/↓ or j/k: move • Enter/Space: toggle • Esc: back", Style::default().fg(app.theme.text_dim))));
+    let block = Block::default().borders(Borders::ALL).border_type(border_type_from_config(&app.config.display.border_style)).title(" List Columns ").border_style(app.theme.style_border(true)).style(app.theme.style_surface());
+    f.render_widget(Paragraph::new(lines).block(block), modal);
 }
 
 fn render_id_formats_modal(f: &mut Frame, app: &App, area: Rect, state: &IdFormatModalState) {
