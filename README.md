@@ -15,6 +15,10 @@
 - 🏷️ **Language badges** — colored per-language icons in the snippet list
 - 📐 **Flexible layout** — toggle horizontal / vertical panes, 4 border styles, resizable panes
 - 🔢 **Sort & filter** — sort by date, ID (natural sort), or name; filter by tag or language
+- 📚 **Saved views** — save and recall named combinations of search, language and tag filters, and sort order
+- 🧾 **Flexible snippet list** — switch between compact and detailed layouts and choose which columns to show
+- 👀 **Live edit preview** — preview Markdown or syntax-highlighted source code while adding or editing a snippet
+- ⌨️ **Custom TUI keybindings** — remap common actions with duplicate-key checks and a restore-defaults option
 - 📦 **Export** — Markdown, JSON, HTML, raw SQLite database
 - 📥 **Import** — from Markdown, JSON, HTML, or SQLite exports; bundled C++ cheatsheets included
 - ♻️ **Spaced repetition** — SM-2 algorithm for snippet review (`revise` / `srs-stats`)
@@ -120,11 +124,12 @@ Launch with `cpkb tui`.
 | Key | Action |
 |-----|--------|
 | `j` / `k` or `↑` / `↓` | Navigate snippet list |
-| `Enter` | View snippet detail / code |
+| `Enter` | Confirm a selection or advance in a form |
 | `/` | Live search / fuzzy filter |
-| `y` / `c` | **Quick Yank / Copy** selected code to clipboard |
+| `y` | **Quick Yank / Copy** selected code to clipboard |
 | `L` | **Cycle language filter** (`All` → `cpp` → `python` → `rust` → …) |
 | `t` | **Open Tag selector modal** to filter by specific tag |
+| `v` | Open saved views; apply a view or save the current search, filters, and sort order |
 | `a` | Add new snippet (modal form / `$EDITOR`) |
 | `e` | Edit selected snippet (modal form / `$EDITOR`) |
 | `Ctrl+e` | Directly open selected snippet in `$EDITOR` |
@@ -136,6 +141,18 @@ Launch with `cpkb tui`.
 | `Esc` | Clear search, language & tag filters / close modal |
 | `q` / `Ctrl+C` | Quit |
 
+The tag selector can be navigated with `↑` / `↓` or the mouse wheel. Click a tag once to select it and click it again to apply it. Press `c` to clear the tag filter.
+
+### Add and Edit Forms
+
+The add and edit forms support multiline fields and scroll to keep the active text or code cursor visible. The description area shows three lines and the code area starts with twelve lines. Tag entry suggests tags already used by other snippets; unmatched text can be added as a new tag. Existing tags with no snippets using them are marked with `*`. The add form also displays the next ID for the selected ID format.
+
+Press `Ctrl+P` in either form to toggle the live preview. Markdown snippets show formatted headings, lists, quotes, and fenced code; other languages show syntax-highlighted code. `Ctrl+S` saves the form, and `Ctrl+E` opens the snippet in the configured external editor.
+
+### Saved Views (`v`)
+
+Press `v` to open saved views. Press `s` to save the current search, language filter, tag filter, and sort order under a name. Select a view and press `Enter` to apply it; press `Delete` to remove it. Saved views are stored in the CPKB configuration.
+
 ### Settings Modal (`s`)
 
 | Row | Control |
@@ -145,7 +162,17 @@ Launch with `cpkb tui`.
 | Sort | Change default sort order |
 | Layout | Toggle horizontal ↔ vertical pane layout |
 | Border | Cycle border styles (round / solid / double / thick) |
+| Snippet ID Formats | Add, edit, and remove ID formats; formats in use cannot be removed |
+| Snippet List Density | Switch between Compact and Detailed layouts |
+| Visible List Columns | Toggle ID, title, language, and tag columns; at least one stays visible |
+| TUI Keybindings | Select an action, press `Enter`, then press the new key. Duplicate bindings are rejected; press `r` to restore defaults |
 | Custom Theme (`c`) | Open the hex color editor (11 palette slots with live preview) |
+
+Settings rows are navigated with `Tab` / `Shift+Tab` or `↑` / `↓`; use `←` / `→` to change values. Press `Enter` to save general settings. List density, column selection, and keybinding changes are saved as they are made.
+
+### Snippet List Layout
+
+Choose **Compact** to show each snippet on one line or **Detailed** to show metadata on a second line. In Settings, open **Visible List Columns** to toggle the snippet ID, title, language, and tags. These preferences are saved in `config.json`.
 
 ---
 
