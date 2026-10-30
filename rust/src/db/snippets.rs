@@ -284,6 +284,7 @@ pub fn update_snippet(
 /// Delete a snippet and its cascading relations.
 pub fn delete_snippet(conn: &Connection, snippet_id: &str) -> Result<bool> {
     let rows = conn.execute("DELETE FROM snippets WHERE id = ?1", params![snippet_id])?;
+    conn.execute("UPDATE tag_catalog SET retired = CASE WHEN EXISTS (SELECT 1 FROM tags WHERE tags.tag = tag_catalog.tag) THEN 0 ELSE 1 END", [])?;
     Ok(rows > 0)
 }
 

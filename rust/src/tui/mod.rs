@@ -10,7 +10,7 @@ use std::io::{self, stdout};
 use std::path::Path;
 use std::time::Duration;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -28,7 +28,7 @@ use crate::tui::ui::render_ui;
 pub fn run_tui(conn: &mut Connection, app_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -38,7 +38,7 @@ pub fn run_tui(conn: &mut Connection, app_dir: &Path) -> Result<(), Box<dyn std:
 
     // Restore terminal state
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {
@@ -61,14 +61,33 @@ fn run_app<B: ratatui::backend::Backend>(
         }
 
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
                     handle_key_event(terminal, app, conn, key.code, key.modifiers)?;
                 }
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::ScrollDown => move_tag_selection(app, 1),
+                    MouseEventKind::ScrollUp => move_tag_selection(app, -1),
+                    _ => {}
+                },
+                _ => {}
             }
         }
     }
     Ok(())
+}
+
+fn move_tag_selection(app: &mut App, delta: isize) {
+    if let Some(ActiveModal::TagSelect(mut state)) = app.active_modal.clone() {
+        if !state.tags.is_empty() {
+            state.selected_idx = if delta > 0 {
+                (state.selected_idx + 1).min(state.tags.len() - 1)
+            } else {
+                state.selected_idx.saturating_sub(1)
+            };
+            app.active_modal = Some(ActiveModal::TagSelect(state));
+        }
+    }
 }
 
 fn handle_key_event<B: ratatui::backend::Backend>(
@@ -133,6 +152,31 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
                 _ => {}
             },
+            ActiveModal::IdFormatBlocked(_) => match code {
+                KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => app.open_id_formats_modal(),
+                _ => {}
+            },
+            ActiveModal::IdFormats(mut state) => match code {
+                KeyCode::Esc => app.open_settings_modal(),
+                KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    let names: Vec<String> = app.config.snippets.id_formats.keys().cloned().collect();
+                    if !names.is_empty() { let idx = state.selected_idx.min(names.len() - 1); app.remove_selected_id_format(conn, &names[idx]); }
+                }
+                KeyCode::Tab => { state.focus_idx = (state.focus_idx + 1) % 2; app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::BackTab => { state.focus_idx = if state.focus_idx == 0 { 1 } else { 0 }; app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::Left | KeyCode::Right if state.focus_idx < 2 => { state.focus_idx = if state.focus_idx == 0 { 1 } else { 0 }; app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::Up => { state.selected_idx = state.selected_idx.saturating_sub(1); app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::Down => { state.selected_idx += 1; app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::Enter if state.focus_idx == 0 => { state.focus_idx = 1; app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::Enter => app.save_id_format(state),
+                KeyCode::Backspace => { if state.focus_idx == 0 { state.name.pop(); } else { state.pattern.pop(); } app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::Char(c) if c.is_ascii_alphanumeric() || "_-#.@".contains(c) => { if state.focus_idx == 0 { state.name.push(c); } else { state.pattern.push(c); } app.active_modal = Some(ActiveModal::IdFormats(state)); }
+                KeyCode::Delete => {
+                    let names: Vec<String> = app.config.snippets.id_formats.keys().cloned().collect();
+                    if !names.is_empty() { let idx = state.selected_idx.min(names.len()-1); app.remove_selected_id_format(conn, &names[idx]); }
+                }
+                _ => {}
+            },
             ActiveModal::Settings(mut state) => {
                 if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e'))
                     || code == KeyCode::Char('e')
@@ -152,11 +196,11 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                        state.focus_idx = (state.focus_idx + 1) % 6;
+                        state.focus_idx = (state.focus_idx + 1) % 7;
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
-                        state.focus_idx = if state.focus_idx == 0 { 5 } else { state.focus_idx - 1 };
+                        state.focus_idx = if state.focus_idx == 0 { 6 } else { state.focus_idx - 1 };
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
@@ -186,6 +230,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             4 => {
                                 state.border_idx = if state.border_idx == 0 { 3 } else { state.border_idx - 1 };
                             }
+                            6 => { app.open_id_formats_modal(); return Ok(()); }
                             _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
@@ -209,6 +254,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             4 => {
                                 state.border_idx = (state.border_idx + 1) % 4;
                             }
+                            6 => { app.open_id_formats_modal(); return Ok(()); }
                             _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
@@ -216,6 +262,8 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     KeyCode::Enter => {
                         if state.focus_idx == 5 {
                             app.open_custom_theme_modal();
+                        } else if state.focus_idx == 6 {
+                            app.open_id_formats_modal();
                         } else {
                             app.save_settings(state);
                         }
@@ -267,7 +315,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     launch_editor_add(terminal, app, conn)?;
                     return Ok(());
                 }
-                if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s')) || (code == KeyCode::Enter && state.focus_idx == 6) {
+                if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s') {
                     app.save_new_snippet(conn, state);
                     return Ok(());
                 }
@@ -276,10 +324,29 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     KeyCode::Esc => {
                         app.active_modal = None;
                     }
-                    KeyCode::Tab | KeyCode::Down => {
+                    KeyCode::Up if state.focus_idx == 3 => {
+                        app.tag_suggestion_idx = app.tag_suggestion_idx.saturating_sub(1);
+                        app.active_modal = Some(ActiveModal::AddSnippet(state));
+                    }
+                    KeyCode::Down if state.focus_idx == 3 => {
+                        let count = app.tag_suggestions(&state.tags).len();
+                        if count > 0 { app.tag_suggestion_idx = (app.tag_suggestion_idx + 1) % count; }
+                        app.active_modal = Some(ActiveModal::AddSnippet(state));
+                    }
+                    KeyCode::Enter if state.focus_idx == 3 => {
+                        app.complete_tag(&mut state.tags);
+                        app.active_modal = Some(ActiveModal::AddSnippet(state));
+                    }
+                    KeyCode::Enter if state.focus_idx == 1 || state.focus_idx == 2 || state.focus_idx == 6 => {
+                        match state.focus_idx { 1 => state.description.push('\n'), 2 => state.use_case.push('\n'), _ => state.code.push('\n') }
+                        app.active_modal = Some(ActiveModal::AddSnippet(state));
+                    }
+                    KeyCode::Enter => { state.focus_idx = (state.focus_idx + 1) % 7; app.active_modal = Some(ActiveModal::AddSnippet(state)); }
+                    KeyCode::Tab => {
                         state.focus_idx = (state.focus_idx + 1) % 7;
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
+                    KeyCode::Down => { state.focus_idx = (state.focus_idx + 1) % 7; app.active_modal = Some(ActiveModal::AddSnippet(state)); }
                     KeyCode::BackTab | KeyCode::Up => {
                         state.focus_idx = if state.focus_idx == 0 { 6 } else { state.focus_idx - 1 };
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
@@ -297,7 +364,13 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         }
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
-                    KeyCode::Backspace => {
+                    KeyCode::Left | KeyCode::Right if state.focus_idx == 4 => {
+                        let current = SUPPORTED_LANGUAGES.iter().position(|l| *l == state.language.to_lowercase()).unwrap_or(0);
+                        let next = if code == KeyCode::Right { (current + 1) % SUPPORTED_LANGUAGES.len() } else if current == 0 { SUPPORTED_LANGUAGES.len()-1 } else { current-1 };
+                        state.language = SUPPORTED_LANGUAGES[next].to_string();
+                        app.active_modal = Some(ActiveModal::AddSnippet(state));
+                    }
+                    KeyCode::Backspace if state.focus_idx != 4 => {
                         let target = match state.focus_idx {
                             0 => &mut state.title,
                             1 => &mut state.description,
@@ -308,9 +381,10 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             _ => &mut state.code,
                         };
                         target.pop();
+                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
-                    KeyCode::Char(c) => {
+                    KeyCode::Char(c) if state.focus_idx != 4 => {
                         let target = match state.focus_idx {
                             0 => &mut state.title,
                             1 => &mut state.description,
@@ -321,6 +395,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             _ => &mut state.code,
                         };
                         target.push(c);
+                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
                         app.active_modal = Some(ActiveModal::AddSnippet(state));
                     }
                     _ => {}
@@ -332,7 +407,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     launch_editor_edit(terminal, app, conn)?;
                     return Ok(());
                 }
-                if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s')) || (code == KeyCode::Enter && state.focus_idx == 6) {
+                if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('s') {
                     app.save_edited_snippet(conn, state);
                     return Ok(());
                 }
@@ -341,10 +416,29 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     KeyCode::Esc => {
                         app.active_modal = None;
                     }
-                    KeyCode::Tab | KeyCode::Down => {
+                    KeyCode::Up if state.focus_idx == 3 => {
+                        app.tag_suggestion_idx = app.tag_suggestion_idx.saturating_sub(1);
+                        app.active_modal = Some(ActiveModal::EditSnippet(state));
+                    }
+                    KeyCode::Down if state.focus_idx == 3 => {
+                        let count = app.tag_suggestions(&state.tags).len();
+                        if count > 0 { app.tag_suggestion_idx = (app.tag_suggestion_idx + 1) % count; }
+                        app.active_modal = Some(ActiveModal::EditSnippet(state));
+                    }
+                    KeyCode::Enter if state.focus_idx == 3 => {
+                        app.complete_tag(&mut state.tags);
+                        app.active_modal = Some(ActiveModal::EditSnippet(state));
+                    }
+                    KeyCode::Enter if state.focus_idx == 1 || state.focus_idx == 2 || state.focus_idx == 6 => {
+                        match state.focus_idx { 1 => state.description.push('\n'), 2 => state.use_case.push('\n'), _ => state.code.push('\n') }
+                        app.active_modal = Some(ActiveModal::EditSnippet(state));
+                    }
+                    KeyCode::Enter => { state.focus_idx = (state.focus_idx + 1) % 7; app.active_modal = Some(ActiveModal::EditSnippet(state)); }
+                    KeyCode::Tab => {
                         state.focus_idx = (state.focus_idx + 1) % 7;
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
+                    KeyCode::Down => { state.focus_idx = (state.focus_idx + 1) % 7; app.active_modal = Some(ActiveModal::EditSnippet(state)); }
                     KeyCode::BackTab | KeyCode::Up => {
                         state.focus_idx = if state.focus_idx == 0 { 6 } else { state.focus_idx - 1 };
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
@@ -373,6 +467,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             _ => &mut state.code,
                         };
                         target.pop();
+                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
                     KeyCode::Char(c) => {
@@ -386,6 +481,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             _ => &mut state.code,
                         };
                         target.push(c);
+                        if state.focus_idx == 3 { app.tag_suggestion_idx = 0; }
                         app.active_modal = Some(ActiveModal::EditSnippet(state));
                     }
                     _ => {}

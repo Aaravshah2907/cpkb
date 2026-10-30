@@ -2,8 +2,28 @@
 
 use rusqlite::{params, Connection, Result};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagCatalogEntry {
+    pub tag: String,
+    pub retired: bool,
+    pub usage_count: usize,
+}
+
+pub fn list_tag_catalog(conn: &Connection) -> Result<Vec<TagCatalogEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.tag, c.retired, COUNT(t.snippet_id) FROM tag_catalog c
+         LEFT JOIN tags t ON t.tag = c.tag GROUP BY c.tag, c.retired
+         ORDER BY c.retired ASC, c.tag COLLATE NOCASE ASC",
+    )?;
+    let rows = stmt.query_map([], |row| Ok(TagCatalogEntry {
+        tag: row.get(0)?, retired: row.get::<_, i64>(1)? != 0, usage_count: row.get::<_, i64>(2)? as usize,
+    }))?;
+    rows.collect()
+}
+
 /// Replace all tags for `snippet_id` with parsed comma-separated tags.
 pub fn update_tags(conn: &Connection, snippet_id: &str, tags_str: &str) -> Result<()> {
+    conn.execute("INSERT OR IGNORE INTO tag_catalog (tag) SELECT tag FROM tags WHERE snippet_id = ?1", params![snippet_id])?;
     conn.execute("DELETE FROM tags WHERE snippet_id = ?1", params![snippet_id])?;
     if !tags_str.trim().is_empty() {
         for tag in tags_str.split(',') {
@@ -13,9 +33,11 @@ pub fn update_tags(conn: &Connection, snippet_id: &str, tags_str: &str) -> Resul
                     "INSERT INTO tags (snippet_id, tag) VALUES (?1, ?2)",
                     params![snippet_id, clean],
                 )?;
+                conn.execute("INSERT INTO tag_catalog (tag, retired) VALUES (?1, 0) ON CONFLICT(tag) DO UPDATE SET retired = 0", params![clean])?;
             }
         }
     }
+    conn.execute("UPDATE tag_catalog SET retired = CASE WHEN EXISTS (SELECT 1 FROM tags WHERE tags.tag = tag_catalog.tag) THEN 0 ELSE 1 END", [])?;
     Ok(())
 }
 

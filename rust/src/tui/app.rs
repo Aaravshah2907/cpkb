@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use crate::clipboard::copy_to_clipboard;
 use crate::config::{load_config, save_config, Config};
 use crate::db::snippets::{add_snippet, delete_snippet, get_snippet, list_snippets, update_snippet, Snippet, SnippetSummary};
+use crate::db::tags::{list_tag_catalog, TagCatalogEntry};
 use crate::tui::syntax::SyntaxHighlighter;
 use crate::tui::theme::{get_available_themes, get_theme, Theme};
 
@@ -196,6 +197,14 @@ pub struct SettingsModalState {
     pub focus_idx: usize, // 0=Theme, 1=Language, 2=Sort, 3=Layout, 4=Border, 5=Edit Custom Theme
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct IdFormatModalState {
+    pub name: String,
+    pub pattern: String,
+    pub focus_idx: usize,
+    pub selected_idx: usize,
+}
+
 pub const SUPPORTED_LANGUAGES: &[&str] = &[
     "cpp", "c", "python", "rust", "tex", "javascript", "typescript", "go", "java", "kotlin", "lua", "bash",
     "markdown", "sql", "html", "css", "json", "yaml", "toml", "swift", "ruby", "php", "zig", "text",
@@ -216,6 +225,8 @@ pub enum ActiveModal {
     Settings(SettingsModalState),
     CustomTheme(CustomThemeModalState),
     TagSelect(TagSelectModalState),
+    IdFormats(IdFormatModalState),
+    IdFormatBlocked(String),
 }
 
 
@@ -223,6 +234,8 @@ pub struct App {
     pub app_dir: PathBuf,
     pub config: Config,
     pub all_snippets: Vec<SnippetSummary>,
+    pub tag_catalog: Vec<TagCatalogEntry>,
+    pub tag_suggestion_idx: usize,
     pub filtered_indices: Vec<usize>,
     pub selected_index: usize,
     pub list_state: ListState,
@@ -246,6 +259,7 @@ impl App {
         let config = load_config(app_dir);
         let theme = get_theme(&config.display.theme, Some(&config.display.custom_theme));
         let all_snippets = list_snippets(conn).unwrap_or_default();
+        let tag_catalog = list_tag_catalog(conn).unwrap_or_default();
 
         let sort_order = match config.display.sort_by.to_lowercase().as_str() {
             "id" => SortOrder::Id,
@@ -260,6 +274,8 @@ impl App {
             app_dir: app_dir.to_path_buf(),
             config,
             all_snippets,
+            tag_catalog,
+            tag_suggestion_idx: 0,
             filtered_indices: Vec::new(),
             selected_index: 0,
             list_state: ListState::default(),
@@ -286,8 +302,38 @@ impl App {
     /// Refresh the list of snippets from the database.
     pub fn reload_snippets(&mut self, conn: &Connection) {
         self.all_snippets = list_snippets(conn).unwrap_or_default();
+        self.tag_catalog = list_tag_catalog(conn).unwrap_or_default();
         self.apply_filter();
         self.reload_active_snippet(conn);
+    }
+
+    pub fn tag_suggestions(&self, value: &str) -> Vec<TagCatalogEntry> {
+        let token = value.rsplit(',').next().unwrap_or("").trim().to_lowercase();
+        if token.is_empty() {
+            return Vec::new();
+        }
+        self.tag_catalog.iter().filter(|entry| entry.tag.to_lowercase().starts_with(&token)).cloned().collect()
+    }
+
+    pub fn complete_tag(&mut self, value: &mut String) {
+        let token = value.rsplit(',').next().unwrap_or("").trim().to_string();
+        let suggestions = self.tag_suggestions(value);
+        if let Some(entry) = suggestions.get(self.tag_suggestion_idx.min(suggestions.len().saturating_sub(1))) {
+            if !token.is_empty() || !suggestions.is_empty() {
+                if let Some((head, _)) = value.rsplit_once(',') {
+                    *value = format!("{}, {}, ", head.trim_end(), entry.tag);
+                } else {
+                    *value = format!("{}, ", entry.tag);
+                }
+            }
+        } else if !token.is_empty() {
+            if let Some((head, _)) = value.rsplit_once(',') {
+                *value = format!("{}, {}, ", head.trim_end(), token);
+            } else {
+                *value = format!("{}, ", token);
+            }
+        }
+        self.tag_suggestion_idx = 0;
     }
 
     /// Fetch and cache full metadata/code for currently selected snippet.
@@ -507,6 +553,58 @@ impl App {
             border_idx,
             focus_idx: 0,
         }));
+    }
+
+    pub fn open_id_formats_modal(&mut self) {
+        self.active_modal = Some(ActiveModal::IdFormats(IdFormatModalState { name: String::new(), pattern: String::new(), focus_idx: 0, selected_idx: 0 }));
+    }
+
+    pub fn save_id_format(&mut self, state: IdFormatModalState) {
+        let name = state.name.trim();
+        let pattern = state.pattern.trim();
+        let hashes: Vec<usize> = pattern.match_indices('#').map(|(i, _)| i).collect();
+        if name.is_empty() || name.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')) {
+            self.set_status_message("Format name must use letters, numbers, ., _ or -".into()); return;
+        }
+        if self.config.snippets.id_formats.contains_key(name) {
+            self.set_status_message(format!("ID format '{}' already exists", name)); return;
+        }
+        if hashes.is_empty() || pattern.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '#' || "_-@.".contains(c))) {
+            self.set_status_message("Pattern needs a # digit placeholder; use letters, numbers, _, -, @ or .".into()); return;
+        }
+        let first = hashes[0]; let last = *hashes.last().unwrap();
+        if pattern[first..=last].chars().any(|c| c != '#') {
+            self.set_status_message("Use one contiguous group of # placeholders".into()); return;
+        }
+        self.config.snippets.id_formats.insert(name.to_string(), crate::config::IdFormatConfig { prefix: None, width: None, pattern: Some(pattern.to_string()), color: None });
+        match save_config(&self.app_dir, &self.config) {
+            Ok(_) => { self.set_status_message(format!("Added ID format '{}'", name)); self.active_modal = None; }
+            Err(e) => self.set_status_message(format!("Could not save ID format: {}", e)),
+        }
+    }
+
+    pub fn remove_selected_id_format(&mut self, conn: &Connection, name: &str) {
+        let Some(fmt) = self.config.snippets.id_formats.get(name) else { return; };
+        let (prefix, suffix) = if let Some(pattern) = &fmt.pattern {
+            let Some(start) = pattern.find('#') else { return; };
+            let end = start + pattern[start..].chars().take_while(|c| *c == '#').count();
+            (pattern[..start].to_string(), pattern[end..].to_string())
+        } else { (fmt.prefix.clone().unwrap_or_else(|| "CP".into()), String::new()) };
+        let in_use = conn.prepare("SELECT id FROM snippets").and_then(|mut stmt| {
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            Ok(rows.filter_map(|row| row.ok()).any(|id| {
+                let Some(rest) = id.strip_prefix(&prefix) else { return false; };
+                let digits = if suffix.is_empty() { rest } else if let Some(d) = rest.strip_suffix(&suffix) { d } else { return false; };
+                !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+            }))
+        }).unwrap_or(true);
+        if in_use { self.active_modal = Some(ActiveModal::IdFormatBlocked(format!("ID format '{}' cannot be removed because one or more snippets use it.", name))); return; }
+        self.config.snippets.id_formats.remove(name);
+        if self.config.snippets.default_id_format == name { self.config.snippets.default_id_format = self.config.snippets.id_formats.keys().next().cloned().unwrap_or_default(); }
+        match save_config(&self.app_dir, &self.config) {
+            Ok(_) => { self.active_modal = Some(ActiveModal::IdFormats(IdFormatModalState { name: String::new(), pattern: String::new(), focus_idx: 0, selected_idx: 0 })); self.set_status_message(format!("Removed ID format '{}'", name)); }
+            Err(e) => self.set_status_message(format!("Could not save ID formats: {}", e)),
+        }
     }
 
     pub fn open_custom_theme_modal(&mut self) {

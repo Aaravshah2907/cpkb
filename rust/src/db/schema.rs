@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS tags (
     FOREIGN KEY(snippet_id) REFERENCES snippets(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS tag_catalog (
+    tag TEXT PRIMARY KEY,
+    retired INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS reviews (
     snippet_id TEXT PRIMARY KEY,
     ease_factor REAL NOT NULL DEFAULT 2.5,

@@ -35,6 +35,8 @@ pub fn get_in_memory_conn() -> Result<Connection> {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     conn.execute_batch(CREATE_SCHEMA_SQL)?;
+    conn.execute("INSERT OR IGNORE INTO tag_catalog (tag, retired) SELECT DISTINCT tag, 0 FROM tags", [])?;
+    conn.execute("UPDATE tag_catalog SET retired = CASE WHEN EXISTS (SELECT 1 FROM tags WHERE tags.tag = tag_catalog.tag) THEN 0 ELSE 1 END", [])?;
     set_schema_version(&conn, CURRENT_SCHEMA_VERSION)?;
     Ok(conn)
 }
