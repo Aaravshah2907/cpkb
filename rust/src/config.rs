@@ -54,6 +54,15 @@ fn default_list_columns() -> Vec<String> {
     vec!["id".to_string(), "title".to_string(), "language".to_string(), "tags".to_string()]
 }
 
+pub fn default_tui_bindings() -> BTreeMap<String, String> {
+    [
+        ("quit", "q"), ("next", "j"), ("previous", "k"), ("first", "g"), ("last", "G"),
+        ("search", "/"), ("add", "a"), ("edit", "e"), ("settings", "s"), ("sort", "o"),
+        ("copy", "y"), ("language_filter", "L"), ("tag_filter", "t"), ("delete", "d"),
+        ("saved_views", "v"), ("clear_filters", "Esc"),
+    ].into_iter().map(|(action, key)| (action.to_string(), key.to_string())).collect()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DisplayConfig {
     pub theme: String,
@@ -179,6 +188,8 @@ pub struct KeybindingsConfig {
     pub page_detail_up: String,
     pub shrink_left: String,
     pub grow_left: String,
+    #[serde(default = "default_tui_bindings")]
+    pub tui: BTreeMap<String, String>,
 }
 
 impl Default for KeybindingsConfig {
@@ -200,6 +211,7 @@ impl Default for KeybindingsConfig {
             page_detail_up: "pageup".to_string(),
             shrink_left: "left_square_bracket".to_string(),
             grow_left: "right_square_bracket".to_string(),
+            tui: default_tui_bindings(),
         }
     }
 }

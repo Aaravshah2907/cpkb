@@ -220,6 +220,21 @@ pub struct SavedViewsModalState {
     pub name: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeybindingsModalState {
+    pub selected_idx: usize,
+    pub recording: bool,
+}
+
+pub const TUI_BINDING_ACTIONS: &[(&str, &str)] = &[
+    ("quit", "Quit"), ("next", "Next snippet"), ("previous", "Previous snippet"),
+    ("first", "First snippet"), ("last", "Last snippet"), ("search", "Search"),
+    ("add", "Add snippet"), ("edit", "Edit snippet"), ("settings", "Settings"),
+    ("sort", "Cycle sort"), ("copy", "Copy snippet"), ("language_filter", "Language filter"),
+    ("tag_filter", "Tag filter"), ("delete", "Delete snippet"), ("saved_views", "Saved views"),
+    ("clear_filters", "Clear filters"),
+];
+
 pub const LIST_COLUMN_OPTIONS: &[(&str, &str)] = &[
     ("id", "Snippet ID"),
     ("title", "Title"),
@@ -251,6 +266,7 @@ pub enum ActiveModal {
     IdFormatBlocked(String),
     ListColumns(ListColumnsModalState),
     SavedViews(SavedViewsModalState),
+    Keybindings(KeybindingsModalState),
 }
 
 
@@ -691,6 +707,40 @@ impl App {
             self.config.saved_views = previous;
             self.set_status_message(format!("Could not delete view: {}", error));
         } else { self.set_status_message(format!("Deleted saved view: {}", name)); }
+    }
+
+    pub fn open_keybindings_modal(&mut self) {
+        self.active_modal = Some(ActiveModal::Keybindings(KeybindingsModalState { selected_idx: 0, recording: false }));
+    }
+
+    pub fn set_tui_binding(&mut self, action: &str, key: String) -> bool {
+        let reserved = ["?", "[", "]", "Ctrl+e"];
+        if reserved.iter().any(|binding| binding.eq_ignore_ascii_case(&key)) {
+            self.set_status_message(format!("Key '{}' is reserved by a built-in command", key));
+            return false;
+        }
+        if self.config.keybindings.tui.iter().any(|(other_action, existing)| other_action != action && existing == &key) {
+            self.set_status_message(format!("Key '{}' is already assigned", key));
+            return false;
+        }
+        let previous = self.config.keybindings.tui.clone();
+        self.config.keybindings.tui.insert(action.to_string(), key);
+        if let Err(error) = save_config(&self.app_dir, &self.config) {
+            self.config.keybindings.tui = previous;
+            self.set_status_message(format!("Could not save keybinding: {}", error));
+            return false;
+        }
+        true
+    }
+
+    pub fn reset_tui_bindings(&mut self) -> bool {
+        let previous = self.config.keybindings.tui.clone();
+        self.config.keybindings.tui = crate::config::default_tui_bindings();
+        if let Err(error) = save_config(&self.app_dir, &self.config) {
+            self.config.keybindings.tui = previous;
+            self.set_status_message(format!("Could not reset keybindings: {}", error));
+            false
+        } else { true }
     }
 
     pub fn open_id_formats_modal(&mut self, conn: &Connection) {

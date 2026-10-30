@@ -20,7 +20,7 @@ use rusqlite::Connection;
 
 use crate::cli::editor::{open_snippet_creator, open_snippet_editor};
 use crate::db::snippets::{add_snippet, update_snippet};
-use crate::tui::app::{ActiveModal, AddSnippetModalState, App, EditSnippetModalState, SUPPORTED_LANGUAGES};
+use crate::tui::app::{ActiveModal, AddSnippetModalState, App, EditSnippetModalState, TUI_BINDING_ACTIONS, SUPPORTED_LANGUAGES};
 use crate::tui::theme::get_available_themes;
 use crate::tui::ui::render_ui;
 
@@ -135,6 +135,23 @@ fn edit_text_field(state: &mut EditSnippetModalState, idx: usize) -> Option<&mut
         6 => Some(&mut state.code),
         _ => None,
     }
+}
+
+fn event_binding(code: KeyCode, modifiers: KeyModifiers) -> String {
+    if modifiers.contains(KeyModifiers::ALT) { return String::new(); }
+    let key = match code {
+        KeyCode::Char(c) => c.to_string(), KeyCode::Enter => "Enter".into(), KeyCode::Esc => "Esc".into(),
+        KeyCode::Tab => "Tab".into(), KeyCode::BackTab => "BackTab".into(), KeyCode::Backspace => "Backspace".into(),
+        KeyCode::Delete => "Delete".into(), KeyCode::Up => "Up".into(), KeyCode::Down => "Down".into(),
+        KeyCode::Left => "Left".into(), KeyCode::Right => "Right".into(), KeyCode::Home => "Home".into(),
+        KeyCode::End => "End".into(), KeyCode::PageUp => "PageUp".into(), KeyCode::PageDown => "PageDown".into(),
+        _ => return String::new(),
+    };
+    if modifiers.contains(KeyModifiers::CONTROL) { format!("Ctrl+{}", key.to_lowercase()) } else { key }
+}
+
+fn binding_matches(app: &App, action: &str, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    app.config.keybindings.tui.get(action).is_some_and(|configured| configured == &event_binding(code, modifiers))
 }
 
 fn handle_cursor_key(value: &mut String, cursor: &mut usize, field_idx: usize, code: KeyCode, modifiers: KeyModifiers) -> bool {
@@ -365,6 +382,30 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     }
                 }
             }
+            ActiveModal::Keybindings(mut state) => {
+                if state.recording {
+                    if code == KeyCode::Esc {
+                        state.recording = false;
+                        app.active_modal = Some(ActiveModal::Keybindings(state));
+                    } else {
+                        let key = event_binding(code, modifiers);
+                        if !key.is_empty() {
+                            let (action, _) = TUI_BINDING_ACTIONS[state.selected_idx.min(TUI_BINDING_ACTIONS.len() - 1)];
+                            if app.set_tui_binding(action, key) { state.recording = false; }
+                            app.active_modal = Some(ActiveModal::Keybindings(state));
+                        }
+                    }
+                } else {
+                    match code {
+                        KeyCode::Esc => app.open_settings_modal(),
+                        KeyCode::Up | KeyCode::Char('k') => { state.selected_idx = state.selected_idx.saturating_sub(1); app.active_modal = Some(ActiveModal::Keybindings(state)); }
+                        KeyCode::Down | KeyCode::Char('j') => { state.selected_idx = (state.selected_idx + 1).min(TUI_BINDING_ACTIONS.len() - 1); app.active_modal = Some(ActiveModal::Keybindings(state)); }
+                        KeyCode::Enter => { state.recording = true; app.active_modal = Some(ActiveModal::Keybindings(state)); }
+                        KeyCode::Char('r') => { app.reset_tui_bindings(); state.selected_idx = 0; app.active_modal = Some(ActiveModal::Keybindings(state)); }
+                        _ => {}
+                    }
+                }
+            }
             ActiveModal::Settings(mut state) => {
                 if (modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e'))
                     || code == KeyCode::Char('e')
@@ -384,11 +425,11 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                         app.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                        state.focus_idx = (state.focus_idx + 1) % 9;
+                        state.focus_idx = (state.focus_idx + 1) % 10;
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
-                        state.focus_idx = if state.focus_idx == 0 { 8 } else { state.focus_idx - 1 };
+                        state.focus_idx = if state.focus_idx == 0 { 9 } else { state.focus_idx - 1 };
                         app.active_modal = Some(ActiveModal::Settings(state));
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
@@ -421,6 +462,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             6 => { app.open_id_formats_modal(conn); return Ok(()); }
                             7 => { app.set_list_density("compact"); }
                             8 => { app.open_list_columns_modal(); return Ok(()); }
+                            9 => { app.open_keybindings_modal(); return Ok(()); }
                             _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
@@ -447,6 +489,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             6 => { app.open_id_formats_modal(conn); return Ok(()); }
                             7 => { app.set_list_density("detailed"); }
                             8 => { app.open_list_columns_modal(); return Ok(()); }
+                            9 => { app.open_keybindings_modal(); return Ok(()); }
                             _ => {}
                         }
                         app.active_modal = Some(ActiveModal::Settings(state));
@@ -458,6 +501,8 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                             app.open_id_formats_modal(conn);
                         } else if state.focus_idx == 8 {
                             app.open_list_columns_modal();
+                        } else if state.focus_idx == 9 {
+                            app.open_keybindings_modal();
                         } else {
                             app.save_settings(state);
                         }
@@ -693,47 +738,47 @@ fn handle_key_event<B: ratatui::backend::Backend>(
     }
 
     match code {
-        KeyCode::Char('q') => {
+        code if binding_matches(app, "quit", code, modifiers) => {
             app.should_quit = true;
         }
-        KeyCode::Char('j') | KeyCode::Down => {
+        code if binding_matches(app, "next", code, modifiers) => {
             app.next(conn);
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        code if binding_matches(app, "previous", code, modifiers) => {
             app.previous(conn);
         }
-        KeyCode::Char('g') | KeyCode::Home => {
+        code if binding_matches(app, "first", code, modifiers) => {
             app.select_first(conn);
         }
-        KeyCode::Char('G') | KeyCode::End => {
+        code if binding_matches(app, "last", code, modifiers) => {
             app.select_last(conn);
         }
-        KeyCode::Char('/') => {
+        code if binding_matches(app, "search", code, modifiers) => {
             app.search_active = true;
         }
-        KeyCode::Char('a') => {
+        code if binding_matches(app, "add", code, modifiers) => {
             app.open_add_modal();
         }
-        KeyCode::Char('e') | KeyCode::Enter => {
+        code if binding_matches(app, "edit", code, modifiers) => {
             app.open_edit_modal();
         }
-        KeyCode::Char('s') | KeyCode::Char(',') => {
+        code if binding_matches(app, "settings", code, modifiers) => {
             app.open_settings_modal();
         }
-        KeyCode::Char('o') | KeyCode::Char('O') => {
+        code if binding_matches(app, "sort", code, modifiers) => {
             app.toggle_sort(conn);
         }
-        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Char('y') | KeyCode::Char('Y') => {
+        code if binding_matches(app, "copy", code, modifiers) => {
             app.copy_current_code();
         }
-        KeyCode::Char('L') => {
+        code if binding_matches(app, "language_filter", code, modifiers) => {
             app.cycle_language_filter(conn);
         }
-        KeyCode::Char('t') | KeyCode::Char('T') => {
+        code if binding_matches(app, "tag_filter", code, modifiers) => {
             app.open_tag_modal();
         }
-        KeyCode::Char('v') | KeyCode::Char('V') => app.open_saved_views_modal(),
-        KeyCode::Char('d') => {
+        code if binding_matches(app, "saved_views", code, modifiers) => app.open_saved_views_modal(),
+        code if binding_matches(app, "delete", code, modifiers) => {
             app.confirm_delete_current();
         }
         KeyCode::Char('[') => {
@@ -745,7 +790,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
         KeyCode::Char('?') => {
             app.active_modal = Some(ActiveModal::Help);
         }
-        KeyCode::Esc => {
+        code if binding_matches(app, "clear_filters", code, modifiers) => {
             app.clear_all_filters(conn);
         }
         _ => {}

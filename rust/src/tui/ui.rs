@@ -10,7 +10,7 @@ use ratatui::Frame;
 
 use crate::tui::app::{
     ActiveModal, AddSnippetModalState, App, CustomThemeModalState, EditSnippetModalState,
-    SettingsModalState, TagSelectModalState, IdFormatModalState, ListColumnsModalState, SavedViewsModalState, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, LIST_COLUMN_OPTIONS, SUPPORTED_LANGUAGES,
+    SettingsModalState, TagSelectModalState, IdFormatModalState, ListColumnsModalState, SavedViewsModalState, KeybindingsModalState, TUI_BINDING_ACTIONS, BORDER_OPTIONS, CUSTOM_THEME_FIELDS, LAYOUT_OPTIONS, LIST_COLUMN_OPTIONS, SUPPORTED_LANGUAGES,
 };
 use crate::tui::badges::get_language_badge;
 use crate::tui::theme::{get_available_themes, parse_color, resolve_id_color};
@@ -73,6 +73,7 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
             ActiveModal::IdFormats(state) => render_id_formats_modal(f, app, size, state),
             ActiveModal::ListColumns(state) => render_list_columns_modal(f, app, size, state),
             ActiveModal::SavedViews(state) => render_saved_views_modal(f, app, size, state),
+            ActiveModal::Keybindings(state) => render_keybindings_modal(f, app, size, state),
             ActiveModal::IdFormatBlocked(message) => render_id_format_blocked(f, app, size, message),
         }
     }
@@ -544,6 +545,7 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
     let formats_focused = state.focus_idx == 6;
     let density_focused = state.focus_idx == 7;
     let columns_focused = state.focus_idx == 8;
+    let keybindings_focused = state.focus_idx == 9;
 
     let sort_name = match state.sort_idx {
         1 => "Snippet ID",
@@ -633,6 +635,11 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
             Span::styled(if columns_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
             Span::styled("Visible List Columns: ", if columns_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
             Span::styled(format!("{}  [Enter]", visible_columns), Style::default().fg(app.theme.text)),
+        ]),
+        Line::from(vec![
+            Span::styled(if keybindings_focused { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled("TUI Keybindings", if keybindings_focused { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text_dim) }),
+            Span::styled("  [Enter]", Style::default().fg(app.theme.secondary)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -724,6 +731,25 @@ fn render_saved_views_modal(f: &mut Frame, app: &App, area: Rect, state: &SavedV
     lines.push(Line::from(Span::styled(if state.creating { "Type a name • Enter: save • Esc: cancel" } else { "↑/↓ or j/k: select • Enter: apply • s: save current • Delete: remove • Esc: close" }, Style::default().fg(app.theme.text_dim))));
     let block = Block::default().borders(Borders::ALL).border_type(border_type_from_config(&app.config.display.border_style)).title(" Saved Views ").border_style(app.theme.style_border(true)).style(app.theme.style_surface());
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }).block(block), modal);
+}
+
+fn render_keybindings_modal(f: &mut Frame, app: &App, area: Rect, state: &KeybindingsModalState) {
+    let modal = centered_rect(64, 88, area);
+    f.render_widget(Clear, modal);
+    let mut lines = vec![Line::from("Select a binding and press Enter to record a key:")];
+    for (idx, (action, label)) in TUI_BINDING_ACTIONS.iter().enumerate() {
+        let key = app.config.keybindings.tui.get(*action).map(String::as_str).unwrap_or("?");
+        lines.push(Line::from(vec![
+            Span::styled(if state.selected_idx == idx { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
+            Span::styled(format!("{:<20}", label), if state.selected_idx == idx { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text) }),
+            Span::styled(if state.recording && state.selected_idx == idx { "Press a key…".to_string() } else { key.to_string() }, Style::default().fg(if state.recording && state.selected_idx == idx { app.theme.warning } else { app.theme.secondary }).add_modifier(Modifier::BOLD)),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("↑/↓ or j/k: move • Enter: set • r: restore defaults • Esc: back", Style::default().fg(app.theme.text_dim))));
+    let scroll = state.selected_idx.saturating_sub(6) as u16;
+    let block = Block::default().borders(Borders::ALL).border_type(border_type_from_config(&app.config.display.border_style)).title(" TUI Keybindings ").border_style(app.theme.style_border(true)).style(app.theme.style_surface());
+    f.render_widget(Paragraph::new(lines).scroll((scroll, 0)).block(block), modal);
 }
 
 fn render_id_formats_modal(f: &mut Frame, app: &App, area: Rect, state: &IdFormatModalState) {
