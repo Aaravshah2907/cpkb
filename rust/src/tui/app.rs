@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use ratatui::widgets::ListState;
+use ratatui::layout::Rect;
 use rusqlite::Connection;
 
 use crate::clipboard::copy_to_clipboard;
@@ -239,6 +240,9 @@ pub struct App {
     pub tag_suggestion_idx: usize,
     pub form_cursors: [usize; 7],
     pub id_format_previews: std::collections::BTreeMap<String, String>,
+    pub tag_list_area: Option<Rect>,
+    pub tag_list_offset: usize,
+    pub tag_click_armed: Option<usize>,
     pub filtered_indices: Vec<usize>,
     pub selected_index: usize,
     pub list_state: ListState,
@@ -281,6 +285,9 @@ impl App {
             tag_suggestion_idx: 0,
             form_cursors: [0; 7],
             id_format_previews: std::collections::BTreeMap::new(),
+            tag_list_area: None,
+            tag_list_offset: 0,
+            tag_click_armed: None,
             filtered_indices: Vec::new(),
             selected_index: 0,
             list_state: ListState::default(),
@@ -772,6 +779,10 @@ impl App {
         } else {
             0
         };
+
+        self.tag_list_offset = 0;
+        self.tag_list_area = None;
+        self.tag_click_armed = None;
 
         self.active_modal = Some(ActiveModal::TagSelect(TagSelectModalState {
             tags,

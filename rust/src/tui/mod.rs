@@ -10,7 +10,7 @@ use std::io::{self, stdout};
 use std::path::Path;
 use std::time::Duration;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -68,6 +68,7 @@ fn run_app<B: ratatui::backend::Backend>(
                 Event::Mouse(mouse) => match mouse.kind {
                     MouseEventKind::ScrollDown => move_tag_selection(app, 1),
                     MouseEventKind::ScrollUp => move_tag_selection(app, -1),
+                    MouseEventKind::Down(MouseButton::Left) => handle_tag_click(app, conn, mouse.column, mouse.row),
                     _ => {}
                 },
                 _ => {}
@@ -80,6 +81,7 @@ fn run_app<B: ratatui::backend::Backend>(
 fn move_tag_selection(app: &mut App, delta: isize) {
     match app.active_modal.clone() {
         Some(ActiveModal::TagSelect(mut state)) if !state.tags.is_empty() => {
+            app.tag_click_armed = None;
             state.selected_idx = if delta > 0 { (state.selected_idx + 1).min(state.tags.len() - 1) } else { state.selected_idx.saturating_sub(1) };
             app.active_modal = Some(ActiveModal::TagSelect(state));
         }
@@ -89,6 +91,26 @@ fn move_tag_selection(app: &mut App, delta: isize) {
             app.active_modal = Some(ActiveModal::IdFormats(state));
         }
         _ => {}
+    }
+}
+
+fn handle_tag_click(app: &mut App, conn: &Connection, column: u16, row: u16) {
+    let Some(area) = app.tag_list_area else { return; };
+    if column < area.x || column >= area.x + area.width || row <= area.y || row >= area.y + area.height.saturating_sub(1) {
+        return;
+    }
+    let visible_row = (row - area.y - 1) as usize;
+    let index = app.tag_list_offset + visible_row;
+    let Some(ActiveModal::TagSelect(mut state)) = app.active_modal.clone() else { return; };
+    if index >= state.tags.len() { return; }
+    if app.tag_click_armed == Some(index) {
+        let tag = state.tags[index].0.clone();
+        app.tag_click_armed = None;
+        app.apply_tag_filter(Some(tag), conn);
+    } else {
+        state.selected_idx = index;
+        app.tag_click_armed = Some(index);
+        app.active_modal = Some(ActiveModal::TagSelect(state));
     }
 }
 
@@ -209,7 +231,9 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                 }
                 _ => {}
             },
-            ActiveModal::TagSelect(mut state) => match code {
+            ActiveModal::TagSelect(mut state) => {
+                app.tag_click_armed = None;
+                match code {
                 KeyCode::Esc | KeyCode::Char('q') => {
                     app.active_modal = None;
                 }
@@ -239,6 +263,7 @@ fn handle_key_event<B: ratatui::backend::Backend>(
                     app.apply_tag_filter(None, conn);
                 }
                 _ => {}
+                }
             },
             ActiveModal::DeleteConfirm(id) => match code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {

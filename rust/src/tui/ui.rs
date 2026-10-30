@@ -40,6 +40,7 @@ fn effective_primary(app: &App) -> ratatui::style::Color {
 
 pub fn render_ui(f: &mut Frame, app: &mut App) {
     let size = f.area();
+    app.tag_list_area = None;
 
     // Background base
     let bg_block = Block::default().style(app.theme.style_base());
@@ -793,13 +794,13 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(help_p, modal_area);
 }
 
-fn render_tag_select_modal(f: &mut Frame, app: &App, area: Rect, state: &TagSelectModalState) {
+fn render_tag_select_modal(f: &mut Frame, app: &mut App, area: Rect, state: &TagSelectModalState) {
     let modal_area = centered_rect(76, 72, area);
     f.render_widget(Clear, modal_area);
 
     let modal_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(2)])
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
         .split(modal_area);
 
     let bt = border_type_from_config(&app.config.display.border_style);
@@ -848,9 +849,12 @@ fn render_tag_select_modal(f: &mut Frame, app: &App, area: Rect, state: &TagSele
         );
 
     let mut list_state = ListState::default();
+    *list_state.offset_mut() = app.tag_list_offset;
     list_state.select(Some(state.selected_idx.min(state.tags.len().saturating_sub(1))));
     f.render_stateful_widget(tag_list, modal_chunks[0], &mut list_state);
-    let controls = Paragraph::new("↑/↓ or wheel: select • Enter: apply\nc: clear • Esc: close")
+    app.tag_list_offset = list_state.offset();
+    app.tag_list_area = Some(modal_chunks[0]);
+    let controls = Paragraph::new("↑/↓ or wheel: select • Enter: apply\nClick: select • click again: apply\nc: clear • Esc: close")
         .style(app.theme.style_surface())
         .alignment(Alignment::Center);
     f.render_widget(controls, modal_chunks[1]);
