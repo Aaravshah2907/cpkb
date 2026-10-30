@@ -357,11 +357,12 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_add_modal(f: &mut Frame, app: &App, area: Rect, state: &AddSnippetModalState) {
-    render_snippet_form(f, app, area, state.focus_idx, &app.form_cursors, "Add New Snippet", &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code, false);
+    let next_id = app.id_format_previews.get(&state.id_format).map(String::as_str).unwrap_or("unavailable");
+    render_snippet_form(f, app, area, state.focus_idx, &app.form_cursors, "Add New Snippet", &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code, false, Some(next_id));
 }
 
 fn render_edit_modal(f: &mut Frame, app: &App, area: Rect, state: &EditSnippetModalState) {
-    render_snippet_form(f, app, area, state.focus_idx, &app.form_cursors, &format!("Edit Snippet: {}", state.id), &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code, true);
+    render_snippet_form(f, app, area, state.focus_idx, &app.form_cursors, &format!("Edit Snippet: {}", state.id), &state.title, &state.description, &state.use_case, &state.tags, &state.language, &state.id_format, &state.code, true, None);
 }
 
 fn text_cursor_location(text: &str, cursor: usize) -> (usize, usize) {
@@ -387,7 +388,7 @@ fn cursor_spans(text: &str, cursor: usize, visible: bool, primary: Color) -> Vec
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, cursors: &[usize; 7], heading: &str, title: &str, description: &str, use_case: &str, tags: &str, language: &str, id_format: &str, code: &str, language_editable: bool) {
+fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, cursors: &[usize; 7], heading: &str, title: &str, description: &str, use_case: &str, tags: &str, language: &str, id_format: &str, code: &str, language_editable: bool, id_preview: Option<&str>) {
     let modal_area = centered_rect(92, 94, area);
     f.render_widget(Clear, modal_area);
     let chunks = Layout::default()
@@ -440,7 +441,7 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, curso
                         lines.push(Line::from(vec![Span::raw(marker), Span::styled(format!("{}{}  ({})", suggestion.tag, stale, suggestion.usage_count), Style::default().fg(if suggestion.retired { app.theme.text_dim } else { app.theme.secondary }))]));
                     }
                 }
-                lines.push(Line::from(Span::styled("    ↑/↓ choose • Enter complete", Style::default().fg(app.theme.text_dim))));
+                lines.push(Line::from(Span::styled("    ↑/↓ choose • Tab/Enter complete", Style::default().fg(app.theme.text_dim))));
             }
         } else if idx == 4 {
             let badge = get_language_badge(language);
@@ -452,6 +453,10 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, curso
             lines.push(Line::from(spans));
         } else if idx == 5 {
             lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled("ID Format: ", label_style), Span::raw(id_format), Span::raw("  ←/→") ]));
+            if let Some(next_id) = id_preview {
+                cursor_rows[idx] = field_rows[idx] + 1;
+                lines.push(Line::from(vec![Span::raw("    Next ID: "), Span::styled(next_id, Style::default().fg(app.theme.success).add_modifier(Modifier::BOLD))]));
+            }
         } else {
             lines.push(Line::from(vec![Span::styled(marker, label_style), Span::styled(format!("Code ({} lines; Enter for newline):", code.lines().count().max(1)), label_style)]));
             let code_lines: Vec<&str> = code.split('\n').collect();
@@ -469,7 +474,7 @@ fn render_snippet_form(f: &mut Frame, app: &App, area: Rect, focus: usize, curso
     let scroll = cursor_rows[focus].saturating_sub(inner_height / 2);
     let p = Paragraph::new(lines).scroll((scroll as u16, 0)).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(Span::styled(heading, Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD))).border_style(app.theme.style_border(true)).style(app.theme.style_surface()));
     f.render_widget(p, chunks[0]);
-    let controls = "Text: ←/→ cursor • ↑/↓ line • Home/End line edge\nTab: next field • Enter: newline / advance • Backspace/Delete\nCtrl+S: save • Ctrl+E: editor • Esc: cancel • Tags: ↑/↓";
+    let controls = "Text: ←/→ cursor • ↑/↓ line • Home/End line edge\nTab: next field / complete tag • Enter: newline / advance\nCtrl+S: save • Ctrl+E: editor • Esc: cancel • Tags: ↑/↓";
     f.render_widget(Paragraph::new(controls).alignment(Alignment::Center).style(app.theme.style_surface()), chunks[1]);
 }
 
@@ -615,34 +620,55 @@ fn render_settings_modal(f: &mut Frame, app: &App, area: Rect, state: &SettingsM
 }
 
 fn render_id_formats_modal(f: &mut Frame, app: &App, area: Rect, state: &IdFormatModalState) {
-    let modal = centered_rect(70, 70, area);
+    let modal = centered_rect(82, 78, area);
     f.render_widget(Clear, modal);
+    let outer = Block::default()
+        .borders(Borders::ALL)
+        .title(" ID Formats ")
+        .border_style(app.theme.style_border(true))
+        .style(app.theme.style_surface());
+    let inner = outer.inner(modal);
+    f.render_widget(outer, modal);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(4)])
-        .split(modal);
-    let mut lines = Vec::new();
+        .constraints([Constraint::Length(2), Constraint::Min(2), Constraint::Length(3)])
+        .split(inner);
+    let mut form_lines = Vec::new();
     for (idx, (label, value)) in [("Name", &state.name), ("Pattern", &state.pattern)].iter().enumerate() {
-        lines.push(Line::from(vec![
+        form_lines.push(Line::from(vec![
             Span::styled(if state.focus_idx == idx { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
             Span::styled(format!("{label}: "), Style::default().fg(app.theme.secondary)),
             Span::styled(if value.is_empty() { "(type here)" } else { value.as_str() }, Style::default().fg(app.theme.text).add_modifier(Modifier::BOLD)),
         ]));
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from("Configured formats:"));
+    f.render_widget(Paragraph::new(form_lines), chunks[0]);
+
+    let mut items = Vec::new();
     for (idx, (name, fmt)) in app.config.snippets.id_formats.iter().enumerate() {
         let pattern = fmt.pattern.clone().unwrap_or_else(|| format!("{}####", fmt.prefix.as_deref().unwrap_or("CP")));
-        lines.push(Line::from(vec![
-            Span::styled(if idx == state.selected_idx { "▶ " } else { "  " }, Style::default().fg(app.theme.primary)),
-            Span::raw(format!("{name:<16} {pattern}{}", if name == &app.config.snippets.default_id_format { " [default]" } else { "" })),
-        ]));
+        let preview = state.previews.iter().find(|(format_name, _)| format_name == name).map(|(_, id)| id.as_str()).unwrap_or("unavailable");
+        let default_marker = if name == &app.config.snippets.default_id_format { " [default]" } else { "" };
+        let name_line = Line::from(vec![
+            Span::styled(format!("{name}{default_marker}"), if idx == state.selected_idx { Style::default().fg(app.theme.primary).add_modifier(Modifier::BOLD) } else { Style::default().fg(app.theme.text) }),
+        ]);
+        let detail_line = Line::from(vec![
+            Span::styled(format!("    {pattern} → next: "), Style::default().fg(app.theme.text_dim)),
+            Span::styled(preview, Style::default().fg(app.theme.success).add_modifier(Modifier::BOLD)),
+        ]);
+        items.push(ListItem::new(vec![name_line, detail_line]));
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from("Examples: ALG_####  NOTE-###  LATEX-######"));
-    f.render_widget(Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" ID Formats ").border_style(app.theme.style_border(true)).style(app.theme.style_surface())), chunks[0]);
-    let controls = "Tab / Shift+Tab / ←→: switch fields\nEnter: advance / save • Backspace: edit • Esc: Settings\n↑/↓: select format • Ctrl+D: remove";
-    f.render_widget(Paragraph::new(controls).alignment(Alignment::Center).style(app.theme.style_surface()), chunks[1]);
+    let mut list_state = ListState::default();
+    if !items.is_empty() {
+        list_state.select(Some(state.selected_idx.min(items.len() - 1)));
+    }
+    let formats = List::new(items)
+        .block(Block::default().title("Configured formats (next ID preview)"))
+        .highlight_symbol("▶ ")
+        .highlight_style(app.theme.style_selected());
+    f.render_stateful_widget(formats, chunks[1], &mut list_state);
+
+    let controls = "Tab / Shift+Tab / ←→: fields • Enter: advance / save\n↑/↓ or wheel: select • Ctrl+F: default • Ctrl+D: remove\nBackspace: edit • Esc: Settings";
+    f.render_widget(Paragraph::new(controls).alignment(Alignment::Center).style(app.theme.style_surface()), chunks[2]);
 }
 
 fn render_id_format_blocked(f: &mut Frame, app: &App, area: Rect, message: &str) {

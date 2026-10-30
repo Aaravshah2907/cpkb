@@ -203,6 +203,7 @@ pub struct IdFormatModalState {
     pub pattern: String,
     pub focus_idx: usize,
     pub selected_idx: usize,
+    pub previews: Vec<(String, String)>,
 }
 
 pub const SUPPORTED_LANGUAGES: &[&str] = &[
@@ -237,6 +238,7 @@ pub struct App {
     pub tag_catalog: Vec<TagCatalogEntry>,
     pub tag_suggestion_idx: usize,
     pub form_cursors: [usize; 7],
+    pub id_format_previews: std::collections::BTreeMap<String, String>,
     pub filtered_indices: Vec<usize>,
     pub selected_index: usize,
     pub list_state: ListState,
@@ -278,6 +280,7 @@ impl App {
             tag_catalog,
             tag_suggestion_idx: 0,
             form_cursors: [0; 7],
+            id_format_previews: std::collections::BTreeMap::new(),
             filtered_indices: Vec::new(),
             selected_index: 0,
             list_state: ListState::default(),
@@ -296,6 +299,7 @@ impl App {
             matcher: SkimMatcherV2::default(),
         };
 
+        app.refresh_id_format_previews(conn);
         app.apply_filter();
         app.reload_active_snippet(conn);
         app
@@ -305,8 +309,17 @@ impl App {
     pub fn reload_snippets(&mut self, conn: &Connection) {
         self.all_snippets = list_snippets(conn).unwrap_or_default();
         self.tag_catalog = list_tag_catalog(conn).unwrap_or_default();
+        self.refresh_id_format_previews(conn);
         self.apply_filter();
         self.reload_active_snippet(conn);
+    }
+
+    pub fn refresh_id_format_previews(&mut self, conn: &Connection) {
+        self.id_format_previews = self.config.snippets.id_formats.keys().map(|name| {
+            let preview = crate::db::snippets::generate_id(conn, &self.app_dir, Some(name))
+                .unwrap_or_else(|error| format!("unavailable: {error}"));
+            (name.clone(), preview)
+        }).collect();
     }
 
     pub fn tag_suggestions(&self, value: &str) -> Vec<TagCatalogEntry> {
@@ -567,11 +580,28 @@ impl App {
         }));
     }
 
-    pub fn open_id_formats_modal(&mut self) {
-        self.active_modal = Some(ActiveModal::IdFormats(IdFormatModalState { name: String::new(), pattern: String::new(), focus_idx: 0, selected_idx: 0 }));
+    pub fn open_id_formats_modal(&mut self, conn: &Connection) {
+        let previews = self.config.snippets.id_formats.keys().map(|name| {
+            let preview = crate::db::snippets::generate_id(conn, &self.app_dir, Some(name))
+                .unwrap_or_else(|err| format!("unavailable: {err}"));
+            (name.clone(), preview)
+        }).collect();
+        self.active_modal = Some(ActiveModal::IdFormats(IdFormatModalState { name: String::new(), pattern: String::new(), focus_idx: 0, selected_idx: 0, previews }));
     }
 
-    pub fn save_id_format(&mut self, state: IdFormatModalState) {
+    pub fn set_default_id_format(&mut self, name: &str) {
+        if !self.config.snippets.id_formats.contains_key(name) {
+            self.set_status_message(format!("Unknown ID format '{}'", name));
+            return;
+        }
+        self.config.snippets.default_id_format = name.to_string();
+        match save_config(&self.app_dir, &self.config) {
+            Ok(_) => self.set_status_message(format!("Default ID format set to '{}'", name)),
+            Err(err) => self.set_status_message(format!("Could not save default ID format: {}", err)),
+        }
+    }
+
+    pub fn save_id_format(&mut self, conn: &Connection, state: IdFormatModalState) {
         let name = state.name.trim();
         let pattern = state.pattern.trim();
         let hashes: Vec<usize> = pattern.match_indices('#').map(|(i, _)| i).collect();
@@ -590,7 +620,7 @@ impl App {
         }
         self.config.snippets.id_formats.insert(name.to_string(), crate::config::IdFormatConfig { prefix: None, width: None, pattern: Some(pattern.to_string()), color: None });
         match save_config(&self.app_dir, &self.config) {
-            Ok(_) => { self.set_status_message(format!("Added ID format '{}'", name)); self.active_modal = None; }
+            Ok(_) => { self.refresh_id_format_previews(conn); self.set_status_message(format!("Added ID format '{}'", name)); self.active_modal = None; }
             Err(e) => self.set_status_message(format!("Could not save ID format: {}", e)),
         }
     }
@@ -614,7 +644,7 @@ impl App {
         self.config.snippets.id_formats.remove(name);
         if self.config.snippets.default_id_format == name { self.config.snippets.default_id_format = self.config.snippets.id_formats.keys().next().cloned().unwrap_or_default(); }
         match save_config(&self.app_dir, &self.config) {
-            Ok(_) => { self.active_modal = Some(ActiveModal::IdFormats(IdFormatModalState { name: String::new(), pattern: String::new(), focus_idx: 0, selected_idx: 0 })); self.set_status_message(format!("Removed ID format '{}'", name)); }
+            Ok(_) => { self.refresh_id_format_previews(conn); self.set_status_message(format!("Removed ID format '{}'", name)); self.open_id_formats_modal(conn); }
             Err(e) => self.set_status_message(format!("Could not save ID formats: {}", e)),
         }
     }
